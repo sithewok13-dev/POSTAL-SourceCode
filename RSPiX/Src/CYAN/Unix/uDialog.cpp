@@ -41,6 +41,11 @@ extern int16_t rspMsgBox(	// Returns RSP_MB_RET_*.  See switch statement below.
 	// Done with var arguments.
 	va_end(varp);
 
+#ifdef POSTAL_RIG
+    // Added: test rig only. Log every message box so the rig can read it.
+    fprintf(stderr, "RIG MSGBOX [%s]: %s\n", pszTitle, szOutput);
+#endif
+
     SDL_MessageBoxData data;
     SDL_zero(data);
 

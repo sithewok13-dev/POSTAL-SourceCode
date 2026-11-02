@@ -326,6 +326,10 @@ static int locateOneElement(char *buf)
 }
 #endif
 
+#if PLATFORM_IOS
+#include "IOSSupport.h"  // Added: iOS
+#endif
+
 static void locateCorrectCase(char *buf)
 {
 #if PLATFORM_UNIX
@@ -396,6 +400,10 @@ extern const char *FindCorrectFile(const char *_pszName, const char *pszMode)
                 }
                 FreeLibrary(lib);
             }
+            #elif PLATFORM_IOS
+            // Added: iOS: settings and saves live next to the game files in
+            // Documents, where the Files app shows them.
+            snprintf(prefpath, sizeof (prefpath), "%s", IOSSupport_DocumentsDir());
             #elif defined(PLATFORM_MACOSX)
             const char *homedir = getenv("HOME");
             if ( (!homedir) || ((strlen(homedir) + 32) >= sizeof (prefpath)) )

@@ -631,7 +631,10 @@ extern bool EnableSteamCloud;
 #define SAVEGAME_DIR						("savegame")
 #endif
 
-#define CHECK_FOR_ASSETS_FILENAME	"res/res.sak"
+// Added: the GOG "Classic and Uncut" data has no res/res.sak (it was only a
+// marker file), so check for the menu archive instead, which every version
+// has and the game cannot start without.
+#define CHECK_FOR_ASSETS_FILENAME	"res/shell/shell.sak"
 #define CHECK_FOR_POSTALSD_FILENAME "res/hoods/ezmart.sak"
 #define COOKIE_VALUE						0x9504cc39 //0xb5cf76dd
 #define COOKIE_FILE_POSITION			289546856 //323290320  

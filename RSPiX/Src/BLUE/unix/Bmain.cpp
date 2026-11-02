@@ -214,6 +214,10 @@ extern int rspCommandLine(const char *cmd)
     return 0;
 }
 
+#if PLATFORM_IOS
+#include "IOSSupport.h"  // Added: iOS
+#endif
+
 extern void rspPlatformInit(void)
 {
 #if PLATFORM_MACOSX
@@ -255,6 +259,15 @@ extern void rspPlatformInit(void)
     }
 
     chdir(realbuf);  // go there.
+#endif
+
+#if PLATFORM_IOS
+    // Added: iOS: landscape only, home bar out of the way, and play from the
+    // app's Documents folder (Files: On My iPhone > POSTAL).
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    SDL_SetHint(SDL_HINT_IOS_HIDE_HOME_INDICATOR, "2");
+    if (IOSSupport_PrepareData() != 0)
+        exit(0);
 #endif
 }
 

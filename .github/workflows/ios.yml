@@ -1,0 +1,214 @@
+name: iOS
+
+# Builds POSTAL.app for iPhone and iPad (unsigned .ipa; sideload it, then copy the
+# res folder of your own POSTAL: Classic and Uncut into Files > On My iPhone > POSTAL).
+# Pushes to "ios" update the ios-latest release; pushes to "ios-dev" only build
+# (a compile check for work in progress). A manual run with "release" publishes
+# that tag.
+
+on:
+  push:
+    branches: [ "ios", "ios-dev" ]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: >-
+          Publish this build as a release with this tag (for example ios-v0.1),
+          created at the commit being built. Leave empty to update ios-latest as usual.
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ inputs.release != '' && format('ios-release-{0}', inputs.release) || format('ios-run-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+env:
+  IOS_MIN: "15.0"
+  SDL_TAG: release-2.30.8
+  RELEASE_TAG: ${{ inputs.release }}
+  RELEASE_IPAS: postal-ios.ipa
+  RELEASE_TITLE: "POSTAL for iOS"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: POSTAL
+    runs-on: macos-15
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Select newest Xcode
+      run: |
+        set -e
+        XCODE=$(ls -d /Applications/Xcode_*.app | grep -iv beta | sort -V | tail -1)
+        echo "Using $XCODE"
+        sudo xcode-select -s "$XCODE/Contents/Developer"
+        xcodebuild -version
+        xcrun --sdk iphoneos --show-sdk-version
+
+    - name: Check release tag and notes
+      if: env.RELEASE_TAG != ''
+      run: |
+        set -e
+        case "$RELEASE_TAG" in
+          ios-v*) ;;
+          *) echo "::error::Release tag \"$RELEASE_TAG\" should look like ios-v0.1 (ios-v<version>)."; exit 1 ;;
+        esac
+        if ! git check-ref-format "refs/tags/$RELEASE_TAG"; then
+          echo "::error::\"$RELEASE_TAG\" can't be a git tag name."
+          exit 1
+        fi
+        # A tag already there must be on this commit, or the release's .ipa and
+        # its tag's source would differ (publishing doesn't move a tag).
+        REFS=$(git ls-remote origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")
+        TAGGED=$(echo "$REFS" | tail -n 1 | cut -f 1)
+        if [ -n "$TAGGED" ] && [ "$TAGGED" != "$GITHUB_SHA" ]; then
+          echo "::error::Tag $RELEASE_TAG is already on commit $TAGGED, not on $GITHUB_SHA (the commit this run builds). Pick a new tag."
+          exit 1
+        fi
+        if ! grep -qxF "### What's in ${RELEASE_TAG}" ios/RELEASE_NOTES.md; then
+          echo "::error file=ios/RELEASE_NOTES.md::No \"### What's in ${RELEASE_TAG}\" heading line. Update the release notes for ${RELEASE_TAG}, commit and push them, then run this again."
+          exit 1
+        fi
+
+    - name: Host tools
+      run: brew install ninja || true
+
+    - name: Restore iOS dependencies
+      id: deps
+      uses: actions/cache/restore@v4
+      with:
+        path: deps
+        key: ios-deps-${{ env.SDL_TAG }}-${{ env.IOS_MIN }}-v1
+
+    - name: Build SDL2 for iOS
+      if: steps.deps.outputs.cache-hit != 'true'
+      run: ios/ci_run.sh "iOS dependencies" ios/build_deps.sh "$PWD/deps"
+
+    - name: Save iOS dependencies
+      if: steps.deps.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      continue-on-error: true
+      with:
+        path: deps
+        key: ${{ steps.deps.outputs.cache-primary-key }}
+
+    - name: Configure
+      run: |
+        ios/ci_run.sh "Configure" cmake -S ios -B build -G Ninja \
+          -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+          -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=$IOS_MIN \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DSDL2_ROOT=$PWD/deps \
+          -DPOSTAL_IOS_BUILD_NUMBER=${{ github.run_number }}
+
+    - name: Build
+      run: ios/ci_run.sh "Build" cmake --build build -- -k 0
+
+    - name: Package .ipa
+      run: |
+        set -e
+        APP=$(find build -maxdepth 2 -name "*.app" -type d | head -1)
+        echo "App bundle: $APP"
+        ls -la "$APP"
+        plutil -lint "$APP/Info.plist"
+        test -f "$APP/POSTAL.INI"
+        codesign --force --sign - --timestamp=none "$APP"
+        mkdir -p ipa/Payload
+        cp -R "$APP" ipa/Payload/
+        (cd ipa && zip -qry ../postal-ios.ipa Payload)
+        ls -la *.ipa
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: postal-ios
+        path: postal-ios.ipa
+
+  release:
+    name: ${{ inputs.release != '' && format('Publish release {0}', inputs.release) || 'Publish to "iOS latest" release' }}
+    needs: build
+    if: github.ref == 'refs/heads/ios' || inputs.release != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    # Release runs only: the notes from the run's commit, for the release text.
+    # Kept first, as checkout empties the folder it checks out into.
+    - name: Get release notes
+      if: env.RELEASE_TAG != ''
+      uses: actions/checkout@v4
+      with:
+        sparse-checkout: ios/RELEASE_NOTES.md
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+
+    - uses: actions/download-artifact@v4
+      with:
+        path: out
+        merge-multiple: true
+
+    # Pushes and ordinary manual runs; a release run leaves ios-latest alone.
+    - name: Publish to "ios-latest" release
+      if: env.RELEASE_TAG == ''
+      uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+      with:
+        tag_name: ios-latest
+        name: iOS latest build
+        prerelease: true
+        make_latest: false
+        body: |
+          Development builds, rebuilt after every push to the `ios` branch (run ${{ github.run_number }}, commit ${{ github.sha }}). They may not have been tried yet. For the latest release and how to install it, see ${{ github.server_url }}/${{ github.repository }}/releases/latest
+          Sideload postal-ios.ipa, then copy the res folder of your own POSTAL: Classic and Uncut (GOG) into Files > On My iPhone > POSTAL.
+        files: out/*.ipa
+
+    # Release runs: only the games in RELEASE_IPAS, the title and whether it's
+    # a prerelease (a '-' in the version, after the "ios-").
+    - name: Prepare release
+      id: rel
+      if: env.RELEASE_TAG != ''
+      run: |
+        set -e
+        if ! grep -qxF "### What's in ${RELEASE_TAG}" ios/RELEASE_NOTES.md; then
+          echo "::error file=ios/RELEASE_NOTES.md::No \"### What's in ${RELEASE_TAG}\" heading line."
+          exit 1
+        fi
+        mkdir release
+        for ipa in $RELEASE_IPAS; do
+          if [ ! -f "out/$ipa" ]; then
+            echo "::error::$ipa (in RELEASE_IPAS) wasn't built."
+            exit 1
+          fi
+          cp "out/$ipa" release/
+        done
+        ls -la release
+        VERSION=${RELEASE_TAG#ios-}
+        case "$VERSION" in
+          *-*) PRERELEASE=true; LATEST=false ;;
+          *) PRERELEASE=false; LATEST=true ;;
+        esac
+        echo "Release \"$RELEASE_TITLE $VERSION\", prerelease $PRERELEASE, latest $LATEST"
+        {
+          echo "name=$RELEASE_TITLE $VERSION"
+          echo "prerelease=$PRERELEASE"
+          echo "latest=$LATEST"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Publish release for the tag
+      if: env.RELEASE_TAG != ''
+      uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+      with:
+        # Creates the tag at the commit this run built (left out, GitHub would
+        # put a new tag on the default branch, main)
+        tag_name: ${{ env.RELEASE_TAG }}
+        target_commitish: ${{ github.sha }}
+        name: ${{ steps.rel.outputs.name }}
+        body_path: ios/RELEASE_NOTES.md
+        prerelease: ${{ steps.rel.outputs.prerelease }}
+        make_latest: ${{ steps.rel.outputs.latest }}
+        files: release/*.ipa
+        fail_on_unmatched_files: true

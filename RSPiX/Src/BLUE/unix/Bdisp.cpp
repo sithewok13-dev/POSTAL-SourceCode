@@ -839,6 +839,34 @@ extern void rspPresentFrame(void)
     SDL_RenderClear(sdlRenderer);
     SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
     SDL_RenderPresent(sdlRenderer);  // off to the screen with you.
+#ifdef POSTAL_RIG
+    // Added: test rig only (never in app builds). Every 30 frames, write
+    // the frame to $POSTAL_RIG_DIR/frame.ppm.
+    {
+        static int rigframe = 0;
+        const char *rigdir = getenv("POSTAL_RIG_DIR");
+        if (rigdir && (++rigframe % 30) == 0)
+        {
+            char path[1024];
+            snprintf(path, sizeof (path), "%s/frame.tmp", rigdir);
+            FILE *f = fopen(path, "wb");
+            if (f)
+            {
+                fprintf(f, "P6\n%d %d\n255\n", FramebufferWidth, FramebufferHeight);
+                for (int i = 0; i < FramebufferWidth * FramebufferHeight; i++)
+                {
+                    const Uint32 c = TexturePointer[i];
+                    const unsigned char rgb[3] = { (unsigned char)(c >> 16), (unsigned char)(c >> 8), (unsigned char)c };
+                    fwrite(rgb, 3, 1, f);
+                }
+                fclose(f);
+                char final[1024];
+                snprintf(final, sizeof (final), "%s/frame.ppm", rigdir);
+                rename(path, final);
+            }
+        }
+    }
+#endif
 
     static Uint32 lastframeticks = 0;
     const Uint32 now = SDL_GetTicks();

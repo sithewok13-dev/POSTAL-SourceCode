@@ -286,7 +286,15 @@ int16_t RPrefs::Read()		// Returns 0 if successfull, non-zero otherwise
 						// Remove newline (if any) from end of line
 						int16_t len = strlen(pszFixedLine);
 						if (pszFixedLine[len - 1] == '\n')
-							pszFixedLine[len - 1] = '\0';
+							pszFixedLine[--len] = '\0';
+						// Added: also drop a Windows "\r" before the "\n", so a
+						// Windows-made .ini (GOG's POSTAL.INI) reads the same on
+						// Unix and iOS. Otherwise "CD = ." reads as ".\r".
+						if (len > 0 && pszFixedLine[len - 1] == '\r')
+							{
+							m_sUseCRLF = 1;
+							pszFixedLine[--len] = '\0';
+							}
 
 						// Find first non-space char
 						char* pszToken = pszFixedLine;

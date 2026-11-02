@@ -143,6 +143,9 @@
 //  the actual application entry point...that will setup some Cocoa stuff and
 //  then call the redefined main() in this file...
 #include "SDL.h"
+#if PLATFORM_IOS
+#include "IOSSupport.h"  // Added: iOS
+#endif
 #endif
 
 #if WITH_STEAMWORKS
@@ -182,7 +185,13 @@ static int16_t SetupVideo(					// Returns 0 on success.
 	{
 	int16_t	sResult	= 0;
 
-#ifdef MOBILE
+#if PLATFORM_IOS
+	// Added: iOS: the game's widescreen mode, 480 high, as wide as the screen's
+	// shape (the desktop mode is in points, smaller than 640x480).
+	wideScreenWidth = (int)(480.0 * IOSSupport_ScreenAspect() + 0.5) & ~1;
+	if (wideScreenWidth < 640)
+		wideScreenWidth = 640;
+#elif defined(MOBILE)
 	wideScreenWidth = 850;
 #elif defined(PANDORA)
 	wideScreenWidth = 800;
