@@ -394,7 +394,7 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     l.layer.cornerRadius = p->r;
     aRings[b].frame = r;
     aRings[b].path = [UIBezierPath bezierPathWithRoundedRect:CGRectInset(r, 2.5, 2.5) cornerRadius:p->r - 2.5].CGPath;
-    if (b == BTN_CHEAT) cheatIcon.frame = CGRectInset(r, 3, 3);
+    if (b == BTN_CHEAT) cheatIcon.frame = CGRectInset(r, p->r * 0.22, p->r * 0.22); /* (inside the round button, as the others' glyphs) */
     [self styleButton:b];
   }
   const CGPoint c = CGPointMake(p->x, p->y);
@@ -440,17 +440,18 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   }
   if (b != BTN_FIRE) l.backgroundColor = Grey(0.12, 0.52);
   if (b == BTN_CAMERA) {
-    NSAttributedString *s = Symbol(@"camera.fill", fmax(10.0, p->r * 0.95), Grey(1.0, 0.92));
+    /* (a glyph inside the round button, about the size of SAVE's letters' block) */
+    NSAttributedString *s = Symbol(@"camera.fill", fmin(16.0, fmax(10.0, p->r * 0.7)), Grey(1.0, 0.92));
     if (s) l.attributedText = s;
     else l.text = @"CAM";
   }
   if (b == BTN_FOLLOWNEXT) {
-    NSAttributedString *s = Symbol(@"arrowtriangle.right.fill", fmax(9.0, p->r * 0.9), Grey(1.0, 0.92));
+    NSAttributedString *s = Symbol(@"arrowtriangle.right.fill", fmin(14.0, fmax(9.0, p->r * 0.6)), Grey(1.0, 0.92));
     if (s) l.attributedText = s;
     else l.text = @">";
   }
   if (b == BTN_CHEAT) {
-    const CGFloat sz = fmax(16.0, p->r * 2 - 6);
+    const CGFloat sz = fmax(16.0, p->r * 2 * 0.56);
     cheatOn = GrenadeImage(sz, [UIColor colorWithRed:0.95 green:0.72 blue:0.18 alpha:1.0], Grey(0.92, 1.0));
     cheatOff = GrenadeImage(sz, [UIColor colorWithRed:0.42 green:0.47 blue:0.30 alpha:1.0], Grey(0.75, 1.0));
     bCheatIconOn = -1;
@@ -622,11 +623,15 @@ static NSAttributedString *Outlined(NSString *str, UIFont *font, UIColor *colour
 static UIFont *StatusFont(CGFloat size) { return [UIFont systemFontOfSize:size weight:UIFontWeightBold]; }
 static UIFont *GoalFont(CGFloat size) { return [UIFont systemFontOfSize:size weight:UIFontWeightSemibold]; }
 
-/* The biggest size from 13 down to IOSTOUCH_STATUS_MIN_FONT at which the status line (and the goal,
-   a point smaller) fit width w; 0 if none */
-static CGFloat StatusFits(NSString *st, NSString *goal, CGFloat w)
+/* The status line's size: always this (it never shrinks as icons come and go -- it drops to the row
+   under the top row instead), smaller only where even that row is too narrow */
+#define STATUS_FONT 12.0
+
+/* The biggest size from `from` down to IOSTOUCH_STATUS_MIN_FONT at which the status line (and the
+   goal, a point smaller) fit width w; 0 if none */
+static CGFloat StatusFits(NSString *st, NSString *goal, CGFloat w, CGFloat from)
 {
-  for (CGFloat size = 13.0; size >= IOSTOUCH_STATUS_MIN_FONT - 1e-6; size -= 0.5) {
+  for (CGFloat size = from; size >= IOSTOUCH_STATUS_MIN_FONT - 1e-6; size -= 0.5) {
     const CGFloat ws = [st sizeWithAttributes:@{ NSFontAttributeName : StatusFont(size) }].width + 4.0;
     const CGFloat wg = goal.length ? [goal sizeWithAttributes:@{ NSFontAttributeName : GoalFont(size - 1.0) }].width + 4.0 : 0.0;
     if (ws <= w && wg <= w) return size;
@@ -663,11 +668,13 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
   NSString *st = [NSString stringWithUTF8String:h->szStatus] ?: @"";
   NSString *goal = [NSString stringWithUTF8String:h->szGoal] ?: @"";
   if (st.length || goal.length) {
-    CGFloat size = rt.bValid ? StatusFits(st, goal, rt.x1 - rt.x0) : 0.0;
+    /* in the top row at STATUS_FONT if it fits between the buttons showing now, else the row under it
+       (same size; smaller only if even that is too narrow) -- centred on the screen either way */
+    CGFloat size = rt.bValid ? StatusFits(st, goal, rt.x1 - rt.x0, STATUS_FONT) : 0.0;
     const IOSTouchRect *r = &rt;
-    if (size <= 0.0) {
+    if (size < STATUS_FONT) {
       r = &r2;
-      size = StatusFits(st, goal, r2.x1 - r2.x0);
+      size = StatusFits(st, goal, r2.x1 - r2.x0, STATUS_FONT);
       if (size <= 0.0) size = IOSTOUCH_STATUS_MIN_FONT; /* (then it is cut short, with "...") */
     }
     const CGFloat rh = r->y1 - r->y0;
@@ -693,7 +700,7 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
   }
   /* dead */
   if (h->bDead) {
-    PlaceLine(deadLabel, Outlined(@"You died \u2014 tap FIRE to restart the level", StatusFont(17), Grey(1.0, 1.0)),
+    PlaceLine(deadLabel, Outlined(@"You died: tap the screen to restart", StatusFont(17), Grey(1.0, 1.0)),
               k->left + 20.0, k->right - 20.0, k->fDeadY, 48.0);
   }
 }

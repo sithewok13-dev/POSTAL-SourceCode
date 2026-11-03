@@ -233,24 +233,28 @@ static void TestLayout(void)
     IOSTouchRect rt, r2;
     IOSTouchCore_StatusRects(&rt, &r2);
     /* (iPhone SE, the camera icon alone: centred on the screen, as wide as it stays clear of it) */
-    CHECK(rt.bValid && fabs((rt.x0 + rt.x1) * 0.5 - 284) < 1e-9 && fabs(rt.x1 - (BX(BTN_CAMERA) - 22 - 8)) < 1e-9);
+    CHECK(rt.bValid && fabs((rt.x0 + rt.x1) * 0.5 - 284) < 1e-9
+          && (fabs(rt.x1 - (BX(BTN_CAMERA) - 22 - 8)) < 1e-9 || fabs(rt.x0 - (BX(BTN_PREVWPN) + 22 + 8)) < 1e-9));
     CHECK(fabs((r2.x0 + r2.x1) * 0.5 - 284) < 1e-9 && r2.x0 == 8 && r2.x1 == 560);
   }
   Screen(844, 390, 47, 0, 47, 21, 1);
   CHECK(!K->aButtons[BTN_SAVE].bPill && K->aButtons[BTN_SAVE].r == 22 && K->aButtons[BTN_NEXTWPN].r == 22);
-  CHECK(BX(BTN_NEXTWPN) == 47 + 24 && BX(BTN_PREVWPN) == 47 + 84 && BY(BTN_NEXTWPN) == 34);
+  /* NEXT, PREV from the left corner; MENU, LOAD, SAVE, the camera from the right; 22 pt apart edge to edge */
+  CHECK(BX(BTN_NEXTWPN) == 47 + 24 && BX(BTN_PREVWPN) == 47 + 90 && BY(BTN_NEXTWPN) == 34);
   CHECK(BX(BTN_MENU) == 797 - 24 && BX(BTN_LOAD) == 797 - 90 && BX(BTN_SAVE) == 797 - 156 && BY(BTN_SAVE) == 34);
-  CHECK(BX(BTN_CAMERA) < BX(BTN_SAVE) && BX(BTN_CHEAT) < BX(BTN_CAMERA) && BY(BTN_CAMERA) == 34);
+  CHECK(BX(BTN_CAMERA) == 797 - 222 && K->aButtons[BTN_CAMERA].r == 22 && !K->aButtons[BTN_CAMERA].bPill && BY(BTN_CAMERA) == 34);
   {
     IOSTouchRect rt, r2;
     IOSTouchCore_StatusRects(&rt, &r2);
     CHECK(rt.bValid && rt.x0 >= BX(BTN_PREVWPN) + 22 && rt.x1 <= BX(BTN_CAMERA) - 22 && r2.y0 >= 34 + 22);
-    CHECK(rt.x1 - rt.x0 > 270 && fabs((rt.x0 + rt.x1) * 0.5 - 422) < 1e-9); /* (the camera icon alone) */
-    /* the cheat icon showing: narrower, never moved sideways; FPS on: narrower still */
+    CHECK(rt.x1 - rt.x0 > 240 && fabs((rt.x0 + rt.x1) * 0.5 - 422) < 1e-9); /* (the camera icon alone) */
+    /* the cheat icon showing: on the left, 22 pt right of PREV WPN; the text space stays centred */
     IOSTouchCore_Settings()->bShowCheat = 1;
+    IOSTouchCore_Layout(844, 390, 47, 0, 47, 21);
+    CHECK(BX(BTN_CHEAT) == BX(BTN_PREVWPN) + 66 && BY(BTN_CHEAT) == 34 && K->aButtons[BTN_CHEAT].r == 22);
     IOSTouchRect rt2, rt3;
     IOSTouchCore_StatusRects(&rt2, &r2);
-    CHECK(rt2.x1 < rt.x1 && rt2.x1 <= BX(BTN_CHEAT) - 22 && fabs((rt2.x0 + rt2.x1) * 0.5 - 422) < 1e-9);
+    CHECK(rt2.x0 >= BX(BTN_CHEAT) + 22 + 8 - 1e-9 && fabs((rt2.x0 + rt2.x1) * 0.5 - 422) < 1e-9);
     IOSTouchCore_Settings()->bShowFps = 1;
     IOSTouchCore_Layout(844, 390, 47, 0, 47, 21);
     IOSTouchCore_StatusRects(&rt3, &r2);
@@ -264,12 +268,37 @@ static void TestLayout(void)
   Move(1, 500, 60);
   CHECK(Read().bAim);
   Up(1, 500, 60);
-  /* dead: FIRE still presses FIRE (the game restarts the level on it) */
+  /* alive: a tap on the screen asks no restart */
+  Down(2, 500, 250); Up(2, 500, 250);
+  CHECK(Frame(0.016) == 0);
+  /* dead: FIRE still presses FIRE (the game restarts the level on it), and asks no RESTART */
   _hud.bDead = 1;
   SetHud();
   Down(2, BX(BTN_FIRE), BY(BTN_FIRE));
   CHECK(Read().ulButtons & IOSTOUCH_FIRE);
   Up(2, BX(BTN_FIRE), BY(BTN_FIRE));
+  CHECK(Frame(0.016) == 0);
+  /* dead: a tap anywhere else (the aim area, the stick area, DUCK), however long: RESTART; no aim, no stick */
+  {
+    const double ax[3] = { 500, 150, BX(BTN_DUCK) }, ay[3] = { 250, 250, BY(BTN_DUCK) };
+    for (int k = 0; k < 3; k++) {
+      Down(2, ax[k], ay[k]);
+      Move(2, ax[k] + 6, ay[k] - 5);
+      IOSTouchInput in = Read();
+      CHECK(!in.bAim && !K->bStickActive && in.fMoveX == 0 && in.fMoveY == 0 && !(in.ulButtons & IOSTOUCH_DUCK));
+      Frames(k == 1 ? 1.0 : 0.1);
+      Up(2, ax[k] + 6, ay[k] - 5);
+      CHECK(Frame(0.016) == IOSTOUCH_REQ_RESTART);
+    }
+  }
+  /* dead: a drag, a cancelled touch: nothing; the top row still works (SAVE: its screen) */
+  Down(2, 500, 250); Move(2, 530, 250); Up(2, 500, 250);
+  Down(3, 500, 250); Cancel(3, 500, 250);
+  CHECK(Frame(0.016) == 0);
+  Down(2, BX(BTN_SAVE), BY(BTN_SAVE)); Frames(0.1); Up(2, BX(BTN_SAVE), BY(BTN_SAVE));
+  CHECK(Frame(0.016) == IOSTOUCH_REQ_SAVESCREEN);
+  _hud.bDead = 0;
+  SetHud();
   /* switching out of full screen lays the strip out again */
   _hud = Hud(1038, 1);
   CHECK(IOSTouchCore_SetHud(&_hud) == 1);
@@ -304,6 +333,79 @@ static void TestLayout(void)
   Screen(844, 390, 47, 0, 47, 21, 0);
   CHECK(BX(BTN_PREVWPN) < BX(BTN_SAVE) && BX(BTN_PREVWPN) > BX(BTN_NEXTWPN));
   CHECK(BX(BTN_NEXTWPN) - 19 >= 640 * 844 / 1038.0 || BY(BTN_NEXTWPN) > BY(BTN_SAVE));
+}
+
+/* ------------------------------------------------------------ the full-screen top row, every combination */
+static double EdgeL(int b) { return b < 0 ? K->rFps.x0 : BX(b) - K->aButtons[b].hw; }
+static double EdgeR(int b) { return b < 0 ? K->rFps.x1 : BX(b) + K->aButtons[b].hw; }
+
+static void TopRowCombos(const char *name, double W, double H, double inL, double inR, double inB, double gWant)
+{
+  _bFull = 1;
+  Screen(W, H, inL, 0, inR, inB, 0);
+  int bad = 0;
+  double gMin = 1e9;
+  for (int m = 0; m < 32; m++) {
+    const int bCheat = m & 1, bCam = (m >> 1) & 1, bFollow = (m >> 2) & 1, bSlow = (m >> 3) & 1, bFps = (m >> 4) & 1;
+    IOSTouchCore_Settings()->bShowCheat = bCheat;
+    IOSTouchCore_Settings()->bShowCamera = bCam;
+    IOSTouchCore_Settings()->bShowFps = bFps;
+    _hud.bFollowing = bFollow;
+    _hud.iSlowMo = bSlow ? 4 : 0;
+    _hud.bCheatOn = bCheat;
+    IOSTouchCore_SetHud(&_hud);
+    IOSTouchCore_Layout(W, H, inL, 0, inR, inB);
+    const double g = K->fTopRowGap;
+    gMin = fmin(gMin, g);
+    /* the groups as they should be, in order from their corners (-1: the FPS readout) */
+    int aL[5], nL = 0, aR[5], nR = 0;
+    aL[nL++] = BTN_NEXTWPN; aL[nL++] = BTN_PREVWPN;
+    if (bCheat) aL[nL++] = BTN_CHEAT;
+    if (bFollow) aL[nL++] = BTN_FOLLOWNEXT;
+    if (bSlow) aL[nL++] = BTN_SLOWMO;
+    aR[nR++] = BTN_MENU; aR[nR++] = BTN_LOAD; aR[nR++] = BTN_SAVE;
+    if (bFps) aR[nR++] = -1;
+    if (bCam) aR[nR++] = BTN_CAMERA;
+    if (fabs(EdgeL(aL[0]) - (inL > 8 ? inL : 8) - 2) > 1e-9 || fabs(EdgeR(aR[0]) - (W - (inR > 8 ? inR : 8)) + 2) > 1e-9) bad = 1;
+    for (int i = 1; i < nL; i++) if (fabs(EdgeL(aL[i]) - EdgeR(aL[i - 1]) - g) > 1e-9) bad = 1;
+    for (int i = 1; i < nR; i++) if (fabs(EdgeL(aR[i - 1]) - EdgeR(aR[i]) - g) > 1e-9) bad = 1;
+    if (EdgeL(aR[nR - 1]) - EdgeR(aL[nL - 1]) < g - 1e-9) bad = 1;          /* (the groups never meet) */
+    for (int i = 0; i < nL; i++) if (aL[i] >= 0 && (K->aButtons[aL[i]].r != 22 || BY(aL[i]) != BY(BTN_MENU) || !IOSTouchCore_IsShown(aL[i]))) bad = 1;
+    for (int i = 0; i < nR; i++) if (aR[i] >= 0 && (K->aButtons[aR[i]].r != 22 || BY(aR[i]) != BY(BTN_MENU) || !IOSTouchCore_IsShown(aR[i]))) bad = 1;
+    if (!bCheat && IOSTouchCore_IsShown(BTN_CHEAT)) bad = 1;
+    if (!bCam && IOSTouchCore_IsShown(BTN_CAMERA)) bad = 1;
+    /* the status text's space: centred on the screen, clear of all of them */
+    IOSTouchRect rt, r2;
+    IOSTouchCore_StatusRects(&rt, &r2);
+    if (fabs((r2.x0 + r2.x1) * 0.5 - W * 0.5) > 1e-9) bad = 1;
+    if (rt.bValid) {
+      if (fabs((rt.x0 + rt.x1) * 0.5 - W * 0.5) > 1e-9) bad = 1;
+      for (int i = 0; i < nL; i++) if (EdgeR(aL[i]) > rt.x0 - 8 + 1e-9 && EdgeL(aL[i]) < rt.x1) bad = 1;
+      for (int i = 0; i < nR; i++) if (EdgeL(aR[i]) < rt.x1 + 8 - 1e-9 && EdgeR(aR[i]) > rt.x0) bad = 1;
+    }
+    if (bad) {
+      printf("  %s: top row wrong with cheat %d camera %d follow %d slow %d fps %d (gap %.1f)\n", name, bCheat, bCam, bFollow, bSlow, bFps, g);
+      break;
+    }
+    if (gWant > 0 && fabs(g - gWant) > 1e-9) {
+      printf("  %s: gap %.1f, not %.0f\n", name, g, gWant);
+      bad = 1;
+      break;
+    }
+  }
+  CHECK(!bad && gMin >= IOSTOUCH_TOPROW_GAP_MIN);
+  if (!bad) printf("  top row %s: all 32 combinations ok (gap %.0f..22)\n", name, gMin);
+  IOSTouchCore_Settings()->bShowCheat = IOSTouchCore_Settings()->bShowFps = 0;
+  IOSTouchCore_Settings()->bShowCamera = 1;
+  _bFull = 0;
+}
+
+static void TestTopRow(void)
+{
+  printf("full-screen top row\n");
+  TopRowCombos("iPhone SE", 568, 320, 0, 0, 0, 0);
+  TopRowCombos("iPhone 14", 844, 390, 47, 47, 21, 22);
+  TopRowCombos("iPhone 16 Pro Max", 956, 440, 62, 62, 21, 22);
 }
 
 /* ------------------------------------------------------------ stick, aim */
@@ -763,6 +865,7 @@ static void TestCamera(void)
 int main(void)
 {
   TestLayout();
+  TestTopRow();
   TestStick();
   TestSaveLoad();
   TestTray();

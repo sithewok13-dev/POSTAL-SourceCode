@@ -65,11 +65,13 @@ extern "C" {
 #define IOSTOUCH_ROW_GAP           4.0   /* between icons in the top rows */
 #define IOSTOUCH_ARROW_W           24.0  /* the follow arrow */
 #define IOSTOUCH_SLOWMO_W          30.0  /* the slow-motion label */
-#define IOSTOUCH_CAMERA_SLIDE      10.0  /* camera slid this far: neither its tap nor its hold */
+#define IOSTOUCH_CAMERA_SLIDE      10.0  /* camera slid this far: no photo */
+#define IOSTOUCH_TAP_SLIDE         10.0  /* dead: a touch that never moved this far is a tap (restart) */
 #define IOSTOUCH_MESSAGE_TIME      3.0
 #define IOSTOUCH_VERSION_H         12.0
 #define IOSTOUCH_TOPROW_RADIUS     22.0  /* full screen: the house top row's buttons */
-#define IOSTOUCH_TOPROW_GAP        6.0
+#define IOSTOUCH_TOPROW_GAP        22.0  /* full screen: edge to edge between top-row neighbours (SAVE, LOAD, MENU's)... */
+#define IOSTOUCH_TOPROW_GAP_MIN    4.0   /* ...less, the same for all, only where everything showing wouldn't fit */
 #define IOSTOUCH_STATUS_ROW_H      34.0  /* full screen: the row under the top row the status text drops to (two lines) */
 #define IOSTOUCH_STATUS_MIN_FONT   10.0  /* the status text shrinks to this, then drops to the row under the top row */
 
@@ -135,6 +137,7 @@ typedef struct {
   int bFpsInStrip;
   double fRow2Y;                /* the second top row's middle (icons that don't fit in the strip, the FPS readout) */
   double fTrayY;                /* the tray's (first) row */
+  double fTopRowY, fTopRowGap;  /* full screen: the top row's middle, and the gap between its items now */
   /* full screen: where the view draws the game's info (health left-aligned at fHealthX, the weapon
      centred on fWeaponX, both on fInfoY; "you died" centred on fDeadX, fDeadY) */
   double fHealthX, fWeaponX, fInfoY, fDeadX, fDeadY;

@@ -44,6 +44,7 @@ typedef enum {
   ROLE_AIM,
   ROLE_BUTTON,
   ROLE_IGNORED, /* does nothing until it lifts */
+  ROLE_DEADTAP, /* dead: a tap on the screen restarts the level (neither moves nor aims) */
   ROLE_WHEEL,   /* on the open wheel (or the NEXT/PREV press that opened it) */
 } Role;
 
@@ -161,6 +162,10 @@ static int LevelShows(void) { return C.hud.bCheatOn && C.ctLevels > 0; }
 static int FollowShows(void) { return C.hud.bCheatOn; }
 
 static int IsTray(int b) { return b >= BTN_TRAY_FIRST && b <= BTN_TRAY_LAST; }
+static int IsTopRow(int b)
+{
+  return (b >= BTN_NEXTWPN && b <= BTN_MENU) || b == BTN_CHEAT || b == BTN_CAMERA || b == BTN_FOLLOWNEXT || b == BTN_SLOWMO;
+}
 
 int IOSTouchCore_IsShown(int b)
 {
@@ -336,36 +341,81 @@ static void LayoutStrip(double W, double H)
   C.fMessageY = C.fRow2Y + 22.0;
 }
 
-/* Full screen (no status strip): the house top row (HOUSE_STYLE 3.1, Sam's
-   layout) -- NEXT WPN, PREV WPN (22 pt round) at the top left; SAVE, LOAD,
-   MENU at the top right; leftwards from SAVE the FPS readout (while it
-   shows), the camera icon, the cheat icon, the follow arrow, the
-   slow-motion label (fixed slots); the game's status text in the band
-   between the two groups (IOSTouchCore_StatusRects), or a row under them */
+/* Full screen (no status strip): the top row, every item a 44 pt round
+   button (the house's 22 pt radius), in two groups packed from the corners
+   with one even gap between neighbours (IOSTOUCH_TOPROW_GAP, less only where
+   everything showing wouldn't fit, the same for all):
+     left:  NEXT WPN, PREV WPN, then the cheat icon, the follow arrow and the
+            slow-motion label while each shows (the cheat things together);
+     right: MENU, LOAD, SAVE in the corner, then (leftwards) the FPS readout
+            and the camera icon while each shows.
+   Items close up when one hides. The game's status text is centred on the
+   screen between the groups (IOSTouchCore_StatusRects), or in the row under
+   them. Laid out again whenever what shows changes (IOSTouchCore_SetHud, the
+   tray). */
+static int TopRowShows(int b)
+{
+  switch (b) {
+  case BTN_CHEAT: return C.bShowCheat;
+  case BTN_CAMERA: return C.bShowCamera;
+  case BTN_FOLLOWNEXT: return C.hud.bFollowing;
+  case BTN_SLOWMO: return C.hud.iSlowMo != 0;
+  default: return 1;
+  }
+}
+
+#define TOPROW_FPS (-1) /* (the FPS readout, in the right group's list) */
+static void PlaceTopRow(void)
+{
+  if (!C.hud.bFullScreen || C.W <= 0) return;
+  const double R = IOSTOUCH_TOPROW_RADIUS, y = C.fTopRowY;
+  int aiL[5], nL = 0, aiR[5], nR = 0;
+  aiL[nL++] = BTN_NEXTWPN;
+  aiL[nL++] = BTN_PREVWPN;
+  const int aiOptL[3] = { BTN_CHEAT, BTN_FOLLOWNEXT, BTN_SLOWMO };
+  for (int i = 0; i < 3; i++) {
+    SetCircle(aiOptL[i], C.aButtons[BTN_PREVWPN].x, y, R); /* (hidden: under PREV WPN, found by nothing) */
+    C.aButtons[aiOptL[i]].bPill = 0;
+    if (TopRowShows(aiOptL[i])) aiL[nL++] = aiOptL[i];
+  }
+  aiR[nR++] = BTN_MENU;
+  aiR[nR++] = BTN_LOAD;
+  aiR[nR++] = BTN_SAVE;
+  if (C.bShowFps) aiR[nR++] = TOPROW_FPS;
+  SetCircle(BTN_CAMERA, C.right - 2.0 - R, y, R);
+  if (C.bShowCamera) aiR[nR++] = BTN_CAMERA;
+  double wSum = 0.0;
+  for (int i = 0; i < nR; i++) wSum += aiR[i] == TOPROW_FPS ? IOSTOUCH_FPS_W : 2.0 * R;
+  wSum += nL * 2.0 * R;
+  /* nL - 1 + nR - 1 gaps inside the groups, and at least two between them */
+  const double room = (C.right - 2.0) - (C.left + 2.0) - wSum;
+  C.fTopRowGap = fmax(IOSTOUCH_TOPROW_GAP_MIN, fmin(IOSTOUCH_TOPROW_GAP, room / (nL + nR)));
+  double x = C.left + 2.0;
+  for (int i = 0; i < nL; i++) {
+    SetCircle(aiL[i], x + R, y, R);
+    x += 2.0 * R + C.fTopRowGap;
+  }
+  x = C.right - 2.0;
+  C.rFps = (IOSTouchRect){ 1, x - IOSTOUCH_FPS_W, y - IOSTOUCH_FPS_H * 0.5, x, y + IOSTOUCH_FPS_H * 0.5 };
+  for (int i = 0; i < nR; i++) {
+    if (aiR[i] == TOPROW_FPS) {
+      C.rFps = (IOSTouchRect){ 1, x - IOSTOUCH_FPS_W, y - IOSTOUCH_FPS_H * 0.5, x, y + IOSTOUCH_FPS_H * 0.5 };
+      x -= IOSTOUCH_FPS_W + C.fTopRowGap;
+    }
+    else {
+      SetCircle(aiR[i], x - R, y, R);
+      x -= 2.0 * R + C.fTopRowGap;
+    }
+  }
+}
+
 static void LayoutTopRow(void)
 {
   const double R = IOSTOUCH_TOPROW_RADIUS, y = fmax(_inT, 8.0) + 26.0;
   for (int b = BTN_NEXTWPN; b <= BTN_MENU; b++) C.aButtons[b].bPill = 0;
-  SetCircle(BTN_NEXTWPN, C.left + 24.0, y, R);
-  SetCircle(BTN_PREVWPN, C.left + 84.0, y, R);
-  SetCircle(BTN_SAVE, C.right - 156.0, y, R);
-  SetCircle(BTN_LOAD, C.right - 90.0, y, R);
-  SetCircle(BTN_MENU, C.right - 24.0, y, R);
-  double xr = C.aButtons[BTN_SAVE].x - R - IOSTOUCH_TOPROW_GAP;
+  C.fTopRowY = y;
   C.bFpsInStrip = 1; /* (in the top row) */
-  C.rFps = (IOSTouchRect){ 1, xr - IOSTOUCH_FPS_W, y - IOSTOUCH_FPS_H * 0.5, xr, y + IOSTOUCH_FPS_H * 0.5 };
-  if (C.bShowFps) xr -= IOSTOUCH_FPS_W + IOSTOUCH_TOPROW_GAP;
-  SetCircle(BTN_CAMERA, 0, y, R);
-  SetCircle(BTN_CHEAT, 0, y, R);
-  SetCircle(BTN_FOLLOWNEXT, 0, y, IOSTOUCH_ARROW_W * 0.5 + 2.0);
-  SetPill(BTN_SLOWMO, 0, y, IOSTOUCH_SLOWMO_W, 24.0);
-  C.aButtons[BTN_SLOWMO].bPill = 1;
-  const int aiChain[4] = { BTN_CAMERA, BTN_CHEAT, BTN_FOLLOWNEXT, BTN_SLOWMO };
-  for (int i = 0; i < 4; i++) {
-    const double w = ButtonW(aiChain[i]);
-    C.aButtons[aiChain[i]].x = xr - w * 0.5;
-    xr -= w + IOSTOUCH_TOPROW_GAP;
-  }
+  PlaceTopRow();
   C.fPillH = 2.0 * R;
   C.rStrip = (IOSTouchRect){ 0, 0, 0, 0, 0 }; /* (none: a touch up there moves or aims as anywhere) */
   C.fRow2Y = y + R + IOSTOUCH_ROW_GAP + 12.0;
@@ -447,8 +497,9 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
 int IOSTouchCore_SetHud(const IOSTouchHud *pHud)
 {
   Init();
-  const int bWasCheat = C.hud.bCheatOn;
+  const int bWasCheat = C.hud.bCheatOn, bWasFollowing = C.hud.bFollowing, iWasSlow = C.hud.iSlowMo;
   if (pHud) C.hud = *pHud;
+  if (bWasFollowing != C.hud.bFollowing || (iWasSlow != 0) != (C.hud.iSlowMo != 0)) PlaceTopRow();
   if (bWasCheat != C.hud.bCheatOn && C.bTrayOpen) PlaceTray(); /* (LEVEL, FOLLOW come and go) */
   if (!pHud || C.W <= 0) return 0;
   return memcmp(_afLaidBar, C.hud.afTopBar, sizeof(_afLaidBar)) || memcmp(_afLaidText, C.hud.afTopText, sizeof(_afLaidText))
@@ -565,6 +616,7 @@ static void UseTrayButton(int b, double now)
       C.bShowCheat = 0;
       if (C.hud.bCheatOn) _ulRequests |= IOSTOUCH_REQ_CHEAT;
     }
+    PlaceTopRow();
     return; /* (stays open: LEVEL and FOLLOW appear once the game has it on) */
   case BTN_TRAY_LEVEL:
     if (C.ctLevels <= 0) {
@@ -577,6 +629,7 @@ static void UseTrayButton(int b, double now)
     break;
   case BTN_TRAY_CAMERA:
     C.bShowCamera = !C.bShowCamera;
+    PlaceTopRow();
     return;
   case BTN_TRAY_FOLLOW:
     _ulRequests |= IOSTOUCH_REQ_FOLLOW;
@@ -979,6 +1032,13 @@ void IOSTouchCore_TouchBegan(const void *touch, double x, double y, double t)
       return;
     }
   }
+  /* Dead: a tap anywhere but the top row, the tray and FIRE (which the game
+     also takes) restarts the level */
+  if (C.hud.bDead && s->button != BTN_FIRE && !IsTray(s->button) && !IsTopRow(s->button)) {
+    s->role = ROLE_DEADTAP;
+    s->button = -1;
+    return;
+  }
   if (s->button >= 0) {
     if (C.aButtons[s->button].kind == KIND_WHEEL) {
       /* a second finger on the same wheel button is ignored */
@@ -1036,6 +1096,9 @@ void IOSTouchCore_TouchMoved(const void *touch, double x, double y, double t)
     break;
   case ROLE_STICK:
     SetStick(x, y);
+    break;
+  case ROLE_DEADTAP:
+    if (hypot(x - s->xDown, y - s->yDown) >= IOSTOUCH_TAP_SLIDE) s->bSlid = 1;
     break;
   case ROLE_AIM:
     AimMoved(s, x, y);
@@ -1167,6 +1230,9 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
   }
   else if (s->role == ROLE_STICK) {
     StopStick();
+  }
+  else if (s->role == ROLE_DEADTAP) {
+    if (!bCancelled && !s->bSlid && hypot(x - s->xDown, y - s->yDown) < IOSTOUCH_TAP_SLIDE) _ulRequests |= IOSTOUCH_REQ_RESTART;
   }
   memset(s, 0, sizeof(*s));
   if (C.bWheelOpen) WheelUpdateHot();
