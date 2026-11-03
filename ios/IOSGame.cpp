@@ -13,6 +13,7 @@
 #include "IOSTouch.h"
 #include "IOSBot.h"
 #include "camera.h"
+#include "hood.h"
 #if PLATFORM_IOS
 #include "IOSSupport.h"
 #define IOSGAME_SCREEN_H_PT IOSSupport_ScreenHeightPoints()
@@ -142,6 +143,65 @@ static bool Owns(CDude* pdude, CDude::WeaponType type, int16_t sAmmo)
 		case CDude::DeathWad:		return ps->m_sDeathWadLauncher != 0;
 		case CDude::DoubleBarrel:	return ps->m_sDoubleBarrel != 0;
 		default:							return sAmmo > 0;	// thrown and laid weapons: owned while there are some
+		}
+	}
+
+// The wheel's pictures: cut from the hood's full toolbar picture, where the
+// bottom bar draws each weapon (toolbar.cpp's rectangles, in 640x480 terms).
+// The double barrel borrows the shotgun's; the deathwad has none (its name shows).
+static const struct { CDude::WeaponType type; int16_t x, y, w, h; } s_aIcon[] =
+	{
+	{ CDude::SemiAutomatic,		123, 443, 48, 23 },
+	{ CDude::ShotGun,				176, 444, 42, 19 },
+	{ CDude::SprayCannon,		221, 442, 44, 22 },
+	{ CDude::Grenade,				272, 443, 19, 23 },
+	{ CDude::Rocket,				306, 442, 54, 21 },
+	{ CDude::Heatseeker,			337, 464, 26, 13 },
+	{ CDude::FireBomb,			390, 442, 20, 24 },
+	{ CDude::Napalm,				413, 441, 49, 23 },
+	{ CDude::FlameThrower,		464, 442, 52, 22 },
+	{ CDude::ProximityMine,		567, 443, 30, 23 },
+	{ CDude::TimedMine,			599, 443, 30, 26 },
+	{ CDude::BouncingBettyMine,538, 444, 28, 28 },
+	{ CDude::DoubleBarrel,		176, 444, 42, 19 },
+	};
+
+static CHood* s_phoodIcons = NULL;	// the hood the icons were last cut from
+
+static void SendIcons(CRealm* prealm)
+	{
+	CHood* phood = prealm ? prealm->m_phood : NULL;
+	if (!phood || phood == s_phoodIcons || !phood->m_pimFullBar || !phood->m_pimFullBar->m_pData)
+		return;
+	s_phoodIcons = phood;
+	RImage* pim = phood->m_pimFullBar;
+	// The bar picture may be just the bottom strip, or the whole 480 lines
+	int16_t sYOff = (pim->m_sHeight < 480) ? (int16_t)(480 - pim->m_sHeight) : 0;
+	for (int i = 0; i < IOSGAME_WHEEL_SLICES; i++)
+		{
+		for (unsigned k = 0; k < sizeof(s_aIcon) / sizeof(s_aIcon[0]); k++)
+			{
+			if (s_aIcon[k].type != s_aWheel[i].type)
+				continue;
+			int16_t x0 = s_aIcon[k].x, y0 = s_aIcon[k].y - sYOff, w = s_aIcon[k].w, h = s_aIcon[k].h;
+			if (x0 < 0 || y0 < 0 || x0 + w > pim->m_sWidth || y0 + h > pim->m_sHeight)
+				break;
+			unsigned char* pub = (unsigned char*)malloc((size_t)w * h * 4);
+			if (!pub)
+				break;
+			for (int y = 0; y < h; y++)
+				for (int x = 0; x < w; x++)
+					{
+					uint8_t idx = pim->m_pData[(size_t)(y0 + y) * pim->m_lPitch + x0 + x];
+					uint32_t c = IOS_PaletteARGB(idx);
+					unsigned char* d = pub + ((size_t)y * w + x) * 4;
+					d[0] = (unsigned char)(c >> 16); d[1] = (unsigned char)(c >> 8); d[2] = (unsigned char)c;
+					d[3] = idx == 0 ? 0 : 255;	// index 0 is the bar's see-through black
+					}
+			IOSTouch_SetWeaponIcon(i, pub, w, h);
+			free(pub);
+			break;
+			}
 		}
 	}
 
@@ -383,6 +443,7 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera)
 	s_uLastPlay = s_uPresents;
 	if (pdude && (s_bCheat || s_bAutoplay))
 		ApplyCheat(pdude);
+	SendIcons(prealm);
 	SendWeapons(pdude);
 #ifdef POSTAL_RIG
 	// Test rig only: the dude's state, for scripted checks

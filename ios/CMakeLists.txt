@@ -25,13 +25,20 @@ add_executable(POSTAL MACOSX_BUNDLE
   ${CMAKE_CURRENT_SOURCE_DIR}/POSTAL.INI
 )
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/POSTAL.INI PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+# The game's own 1997 code builds with warnings off (as the makefile); the
+# iOS files are new and must build with no warnings at all.
+set_source_files_properties(${POSTAL_SRCS} PROPERTIES COMPILE_OPTIONS "-w")
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSSupport.m ${CMAKE_CURRENT_SOURCE_DIR}/IOSTouch.m
-  ${CMAKE_CURRENT_SOURCE_DIR}/IOSPhotos.m PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+  ${CMAKE_CURRENT_SOURCE_DIR}/IOSPhotos.m PROPERTIES COMPILE_OPTIONS "-fobjc-arc;-Wall;-Wextra;-Werror;-Wno-unused-parameter")
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSTouchCore.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror;-Wno-unused-parameter")
+# IOSGame/IOSBot include the game's headers, which warn: only -Wall here
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSGame.cpp ${CMAKE_CURRENT_SOURCE_DIR}/IOSBot.cpp
+  PROPERTIES COMPILE_OPTIONS "-Wall;-Wno-unused-parameter;-Wno-unused-variable;-Wno-unused-function;-Wno-writable-strings;-Wno-deprecated-declarations")
 
 target_compile_definitions(POSTAL PRIVATE
   PLATFORM_UNIX=1 PLATFORM_IOS=1 LOCALE=US TARGET=POSTAL_2015 ALLOW_TWINSTICK)
-# As the makefile: char is signed (arm64 makes it unsigned by default), no warnings
-target_compile_options(POSTAL PRIVATE -fsigned-char -w
+# As the makefile: char is signed (arm64 makes it unsigned by default)
+target_compile_options(POSTAL PRIVATE -fsigned-char
   $<$<COMPILE_LANGUAGE:CXX>:-Wno-c++11-narrowing>
   $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++11>)
 
