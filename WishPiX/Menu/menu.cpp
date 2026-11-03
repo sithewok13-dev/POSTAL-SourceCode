@@ -1528,15 +1528,6 @@ extern Menu* GetCurrentMenu(void)	// Returns the a pointer to the current
 	return ms_pmenu;
 	}
 
-#if PLATFORM_IOS || defined(POSTAL_RIG)
-// Added: iOS: the touch BACK button does what Escape does (a phone has no Escape key)
-extern void IOS_MenuCancel(void)
-	{
-	if (ms_pmenu != NULL)
-		ms_sCancel	= TRUE;
-	}
-#endif
-
 //////////////////////////////////////////////////////////////////////////////
 //
 // Call this to release all memory being used by the menu system

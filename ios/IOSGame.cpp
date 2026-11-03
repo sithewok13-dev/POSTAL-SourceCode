@@ -15,7 +15,7 @@
 #include "camera.h"
 #include "hood.h"
 #include "menus.h"	// (menuMain; WishPiX menu.h: GetCurrentMenu)
-extern void IOS_MenuCancel(void);	// Added: iOS: WishPiX/Menu/menu.cpp
+#include "SDL.h"	// (BACK: an Escape key event)
 #if PLATFORM_IOS
 #include "IOSPhotos.h"
 #endif
@@ -161,7 +161,7 @@ static bool Owns(CDude* pdude, CDude::WeaponType type, int16_t sAmmo)
 
 // The wheel's pictures: cut from the hood's full toolbar picture, where the
 // bottom bar draws each weapon (toolbar.cpp's rectangles, in 640x480 terms).
-// The double barrel borrows the shotgun's; the deathwad has none (its name shows).
+// The double barrel borrows the shotgun's; the deathwad the missiles', recoloured.
 static const struct { CDude::WeaponType type; int16_t x, y, w, h; bool bFire; } s_aIcon[] =
 	{
 	{ CDude::SemiAutomatic,		123, 443, 48, 23 },
@@ -562,7 +562,20 @@ void IOSGame_Present(void* pSDLWindow)
 	unsigned req = IOSTouch_Update(pSDLWindow, iMode, &hud, ++s_uDrawn);
 	IOSTouch_ReadInput(&s_in);
 	if (bMenu && (req & IOSTOUCH_REQ_BACK))
-		IOS_MenuCancel();
+		{
+		// An Escape key press, into SDL's queue: the game takes it in order with the
+		// taps, and as on PC (a controls screen waiting for a key ends its wait on it)
+		SDL_Event ev;
+		memset(&ev, 0, sizeof(ev));
+		ev.type = SDL_KEYDOWN;
+		ev.key.state = SDL_PRESSED;
+		ev.key.keysym.sym = SDLK_ESCAPE;
+		ev.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+		SDL_PushEvent(&ev);
+		ev.type = SDL_KEYUP;
+		ev.key.state = SDL_RELEASED;
+		SDL_PushEvent(&ev);
+		}
 	if (!bPlaying)
 		{
 		// Out of play (menus, cutscenes, loading) the buttons can't ask for
