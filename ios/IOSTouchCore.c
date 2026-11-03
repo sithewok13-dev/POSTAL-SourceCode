@@ -1027,7 +1027,7 @@ void IOSTouchCore_TouchBegan(const void *touch, double x, double y, double t)
   /* An open tray closes at a touch anywhere else (on MENU: only that) */
   if (C.bTrayOpen && !IsTray(s->button)) {
     SetTrayOpen(0);
-    if (s->button == BTN_MENU) {
+    if (s->button == BTN_MENU || C.hud.bDead) { /* (dead: closing the tray must not also restart) */
       s->role = ROLE_IGNORED;
       return;
     }
@@ -1035,6 +1035,11 @@ void IOSTouchCore_TouchBegan(const void *touch, double x, double y, double t)
   /* Dead: a tap anywhere but the top row, the tray and FIRE (which the game
      also takes) restarts the level */
   if (C.hud.bDead && s->button != BTN_FIRE && !IsTray(s->button) && !IsTopRow(s->button)) {
+    /* a near miss on the top row (or the status text in it) does nothing */
+    if (C.hud.bFullScreen && s->button < 0 && y < C.fTopRowY + IOSTOUCH_TOPROW_RADIUS + 6.0) {
+      s->role = ROLE_IGNORED;
+      return;
+    }
     s->role = ROLE_DEADTAP;
     s->button = -1;
     return;
@@ -1232,7 +1237,7 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
     StopStick();
   }
   else if (s->role == ROLE_DEADTAP) {
-    if (!bCancelled && !s->bSlid && hypot(x - s->xDown, y - s->yDown) < IOSTOUCH_TAP_SLIDE) _ulRequests |= IOSTOUCH_REQ_RESTART;
+    if (C.hud.bDead && !bCancelled && !s->bSlid && hypot(x - s->xDown, y - s->yDown) < IOSTOUCH_TAP_SLIDE) _ulRequests |= IOSTOUCH_REQ_RESTART;
   }
   memset(s, 0, sizeof(*s));
   if (C.bWheelOpen) WheelUpdateHot();

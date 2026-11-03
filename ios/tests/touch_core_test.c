@@ -297,8 +297,21 @@ static void TestLayout(void)
   CHECK(Frame(0.016) == 0);
   Down(2, BX(BTN_SAVE), BY(BTN_SAVE)); Frames(0.1); Up(2, BX(BTN_SAVE), BY(BTN_SAVE));
   CHECK(Frame(0.016) == IOSTOUCH_REQ_SAVESCREEN);
+  /* dead: a near miss beside a top-row button, or a tap on the status text: nothing */
+  Down(2, BX(BTN_LOAD) - 30, BY(BTN_LOAD)); Up(2, BX(BTN_LOAD) - 30, BY(BTN_LOAD));
+  Down(2, 422, BY(BTN_MENU)); Up(2, 422, BY(BTN_MENU));
+  CHECK(Frame(0.016) == 0);
+  /* dead: a tap that closes the open tray only closes it */
+  Down(0, BX(BTN_MENU), BY(BTN_MENU)); Frames(0.6); Up(0, BX(BTN_MENU), BY(BTN_MENU));
+  CHECK(K->bTrayOpen && Frame(0.016) == 0);
+  Down(2, 500, 250); CHECK(!K->bTrayOpen); Up(2, 500, 250);
+  CHECK(Frame(0.016) == 0);
+  /* a finger down while dead, lifted after the revive: no restart */
+  Down(2, 500, 250);
   _hud.bDead = 0;
   SetHud();
+  Up(2, 500, 250);
+  CHECK(Frame(0.016) == 0);
   /* switching out of full screen lays the strip out again */
   _hud = Hud(1038, 1);
   CHECK(IOSTouchCore_SetHud(&_hud) == 1);
