@@ -35,6 +35,7 @@ static U16				s_idFollow		= 0;	// CIdBank::IdNil
 static int32_t			s_lFollowDeadAt = 0;	// game time the followed one was first seen dead
 static int				s_iSlow			= 0;	// 0, 2, 4
 static bool				s_bKeyboard		= false;
+static int				s_ctRestart		= 0;	// frames left to send the revive key (a tap after death)
 static unsigned		s_uLevel			= 0;	// bumped for each new realm
 static CRealm*			s_prealm			= NULL;	// valid only during the frame it was set
 static CDude*			s_pdude			= NULL;
@@ -502,6 +503,7 @@ void IOSGame_Present(void* pSDLWindow)
 		// anything; drop what may have come in on the way out, so nothing
 		// fires later at the wrong moment.
 		memset(&s_in, 0, sizeof(s_in));
+		s_ctRestart = 0;
 		req = 0;
 		(void)IOSTouch_TakeLevelPick();
 		return;
@@ -555,6 +557,9 @@ void IOSGame_Present(void* pSDLWindow)
 	// Camera
 	if (req & IOSTOUCH_REQ_PHOTO)
 		s_iPhoto = PHOTO_ONE;
+	// Dead: a tap anywhere restarts the level (sent for a few frames, like a held key)
+	if (req & IOSTOUCH_REQ_RESTART)
+		s_ctRestart = 3;
 	// Tray SLOW: off -> 1/2 -> 1/4 -> off
 	if (req & IOSTOUCH_REQ_SLOWMO)
 		s_iSlow = (s_iSlow == 0) ? 2 : (s_iSlow == 2 ? 4 : 0);
@@ -581,6 +586,12 @@ int IOSGame_TakeNext(int16_t* psRealm)
 ////////////////////////////////////////////////////////////////////////////////
 U32 IOSGame_Input(U32 input)
 	{
+	if (s_ctRestart > 0)
+		{
+		s_ctRestart--;
+		if (s_pdude && s_pdude->IsDead())
+			input |= INPUT_REVIVE;				// dead: a tap restarts the level (the game's revive key)
+		}
 	if (s_bFollow)
 		return input & ~(INPUT_FIRE | INPUT_EXECUTE | INPUT_DUCK);	// the dude waits while the camera is away
 	if ((s_in.ulButtons & IOSTOUCH_FIRE) && s_pdude && s_pdude->IsDead())

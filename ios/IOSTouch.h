@@ -53,7 +53,8 @@ enum {
   IOSTOUCH_REQ_QUICKLOAD   = 1 << 4,  /* LOAD held 0.3 s */
   IOSTOUCH_REQ_CHEAT       = 1 << 5,  /* toggle the cheat (tray or the cheat icon); the game plays the sound */
   IOSTOUCH_REQ_LEVEL       = 1 << 6,  /* tray LEVEL (cheat on): the level select with every level open */
-  /* (1 << 7, 8, 9: were autoplay's) */
+  IOSTOUCH_REQ_RESTART     = 1 << 7,  /* dead: a tap on the screen restarts the level */
+  /* (1 << 8, 9: were autoplay's) */
   IOSTOUCH_REQ_KEYBOARD    = 1 << 10, /* tray keyboard: type one of POSTAL's cheat words */
   IOSTOUCH_REQ_FOLLOW      = 1 << 11, /* tray FOLLOW: follow cam on/off */
   IOSTOUCH_REQ_FOLLOWNEXT  = 1 << 12, /* the arrow by the camera icon: follow the next person */
