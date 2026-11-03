@@ -1504,7 +1504,8 @@ int16_t ScoreHighestKills(CRealm* pRealm)
 //////////////////////////////////////////////////////////////////////////////
 // Added: iOS: the status strip's two lines as plain text, for the touch
 // overlay to draw over a full-screen view (single-player modes; the same
-// formats and values ScoreUpdateDisplay prints). The goal line stays up.
+// formats and values ScoreUpdateDisplay prints). The goal line is always given (the
+// iOS side shows it only for the first seconds of play).
 //////////////////////////////////////////////////////////////////////////////
 void ScoreGetStatusText(CRealm* pRealm, char* pszLine1, int iLen1, char* pszLine2, int iLen2)
 {
@@ -1567,10 +1568,19 @@ void ScoreGetStatusText(CRealm* pRealm, char* pszLine1, int iLen1, char* pszLine
 		}
 	}
 	// The strip's formats pad with runs of spaces for its fixed layout: squeeze them
-	for (char* psz = pszLine1; *psz; psz++)
-		while (psz[0] == ' ' && psz[1] == ' ')
-			memmove(psz, psz + 1, strlen(psz));
-	while (pszLine1[0] == ' ')
-		memmove(pszLine1, pszLine1 + 1, strlen(pszLine1));
+	// (and the overlay centres them: no leading or trailing spaces)
+	char* apsz[2] = { pszLine1, pszLine2 };
+	for (int i = 0; i < 2; i++)
+	{
+		char* pszLine = apsz[i];
+		for (char* psz = pszLine; *psz; psz++)
+			while (psz[0] == ' ' && psz[1] == ' ')
+				memmove(psz, psz + 1, strlen(psz));
+		while (pszLine[0] == ' ')
+			memmove(pszLine, pszLine + 1, strlen(pszLine));
+		size_t n = strlen(pszLine);
+		while (n > 0 && pszLine[n - 1] == ' ')
+			pszLine[--n] = '\0';
+	}
 }
 #endif

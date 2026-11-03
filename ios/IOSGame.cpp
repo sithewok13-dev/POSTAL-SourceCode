@@ -37,6 +37,7 @@ static int				s_iSlow			= 0;	// 0, 2, 4
 static bool				s_bKeyboard		= false;
 static int				s_ctRestart		= 0;	// frames left to send the revive key (a tap after death)
 static unsigned		s_uLevel			= 0;	// bumped for each new realm
+static int32_t		s_lGoalUntil		= 0;	// game time the goal line shows until (its first seconds of play)
 static CRealm*			s_prealm			= NULL;	// valid only during the frame it was set
 static CDude*			s_pdude			= NULL;
 static bool				s_bLevelsSent	= false;
@@ -184,6 +185,11 @@ static void SendIcons(CRealm* prealm)
 		return;
 	s_phoodIcons = phood;
 	RImage* pim = phood->m_pimFullBar;
+	// The empty bar is the same picture without the weapons: where the two match is
+	// the bar's background, which the wheel shows see-through (just the weapon)
+	RImage* pimEmpty = phood->m_pimEmptyBar;
+	if (pimEmpty && (!pimEmpty->m_pData || pimEmpty->m_sWidth != pim->m_sWidth || pimEmpty->m_sHeight != pim->m_sHeight))
+		pimEmpty = NULL;
 	// The bar picture may be just the bottom strip, or the whole 480 lines
 	int16_t sYOff = (pim->m_sHeight < 480) ? (int16_t)(480 - pim->m_sHeight) : 0;
 	for (int i = 0; i < IOSGAME_WHEEL_SLICES; i++)
@@ -201,12 +207,43 @@ static void SendIcons(CRealm* prealm)
 			for (int y = 0; y < h; y++)
 				for (int x = 0; x < w; x++)
 					{
-					uint8_t idx = pim->m_pData[(size_t)(y0 + y) * pim->m_lPitch + x0 + x];
+					size_t o = (size_t)(y0 + y) * pim->m_lPitch + x0 + x;
+					uint8_t idx = pim->m_pData[o];
 					uint32_t c = IOS_PaletteARGB(idx);
 					unsigned char* d = pub + ((size_t)y * w + x) * 4;
 					d[0] = (unsigned char)(c >> 16); d[1] = (unsigned char)(c >> 8); d[2] = (unsigned char)c;
-					d[3] = idx == 0 ? 0 : 255;	// index 0 is the bar's see-through black
+					bool bBack = idx == 0;	// index 0 is the bar's see-through black
+					if (!bBack && pimEmpty)
+						{
+						// the same colour as the empty bar there, or close to it (the weapons'
+						// soft shadows on the bar): background
+						uint32_t e = IOS_PaletteARGB(pimEmpty->m_pData[(size_t)(y0 + y) * pimEmpty->m_lPitch + x0 + x]);
+						int dr = (int)((c >> 16) & 255) - (int)((e >> 16) & 255);
+						int dg = (int)((c >> 8) & 255) - (int)((e >> 8) & 255);
+						int db = (int)(c & 255) - (int)(e & 255);
+						int r = (int)((c >> 16) & 255), b = (int)(c & 255);
+						bBack = dr == 0 && dg == 0 && db == 0
+							|| (r - b > 18 && dr * dr + dg * dg + db * db < 48 * 48);	// (the weapons are grey; the bar and its shadows brown)
+						}
+					d[3] = bBack ? 0 : 255;
 					}
+			// Clear stray dots: a pixel with at most one solid neighbour
+			for (int pass = 0; pass < 1; pass++)
+				for (int y = 0; y < h; y++)
+					for (int x = 0; x < w; x++)
+						{
+						unsigned char* d = pub + ((size_t)y * w + x) * 4;
+						if (!d[3])
+							continue;
+						int ct = 0;
+						for (int dy = -1; dy <= 1; dy++)
+							for (int dx = -1; dx <= 1; dx++)
+								if ((dx || dy) && x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h
+									&& pub[((size_t)(y + dy) * w + x + dx) * 4 + 3])
+									ct++;
+						if (ct <= 1)
+							d[3] = 0;
+						}
 			IOSTouch_SetWeaponIcon(i, pub, w, h);
 			free(pub);
 			break;
@@ -264,7 +301,7 @@ static void FollowNext(CRealm* prealm)
 			if (pn->m_powner == pcur) { pstart = pn->m_pnNext; break; }
 		}
 	// Two passes round the list from just after the current one
-	for (int pass = 0; pass < 2; pass++)
+	for (int pass = 0; pass < 1; pass++)
 		{
 		for (CListNode<CThing>* pn = (pass == 0 ? pstart : phead->m_pnNext); pn && pn->m_powner; pn = pn->m_pnNext)
 			{
@@ -387,6 +424,7 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 	if (prealm != s_prealmSeen || prealm->m_phood != s_phoodSeen || lTime + 1000 < s_lTimeSeen)
 		{
 		s_uLevel++;
+		s_lGoalUntil = lTime + 8000;	// as the PC strip did: the goal for its first 8 seconds
 		s_idFollow = CIdBank::IdNil;
 		s_phoodIcons = NULL;
 		s_pdudeInvincibleSet = NULL;
@@ -408,7 +446,7 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 		{
 		const char* pszDir = getenv("POSTAL_RIG_DIR");
 		char szPath[1024];
-		snprintf(szPath, sizeof(szPath), "%s/dude.state", pszDir ? pszDir : ".");
+		snprintf(szPath, sizeof(szPath), "%s/dude.state.tmp", pszDir ? pszDir : ".");	// (written whole, then renamed: a reader never sees half)
 		FILE* f = fopen(szPath, "w");
 		if (f)
 			{
@@ -417,6 +455,9 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 				pdude->m_stockpile.m_sNumBullets, pdude->m_stockpile.m_sNumShells, (int)pdude->GetCurrentWeapon(),
 				(int)pdude->m_state, (long)prealm->m_time.GetGameTime());
 			fclose(f);
+			char szFinal[1024];
+			snprintf(szFinal, sizeof(szFinal), "%s/dude.state", pszDir ? pszDir : ".");
+			rename(szPath, szFinal);
 			}
 		}
 #endif
@@ -431,6 +472,10 @@ static void FillFullScreenHud(IOSTouchHud* phud)
 	if (!s_prealm)
 		return;
 	ScoreGetStatusText(s_prealm, phud->szStatus, sizeof(phud->szStatus), phud->szGoal, sizeof(phud->szGoal));
+	// (counted from the first frame played, not the realm's clock: that already ran
+	// through the level's intro screen)
+	if (s_prealm->m_time.GetGameTime() >= s_lGoalUntil)
+		phud->szGoal[0] = '\0';
 	if (s_pdude)
 		{
 		// As the bar shows it: a percentage of full health (at least 1 while alive)

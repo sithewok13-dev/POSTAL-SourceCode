@@ -607,17 +607,17 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
 }
 
 /* ---------------------------------------------------------------- the game's info (full screen) */
-/* White letters with a dark outline and shadow, no panel */
+/* White letters with a soft dark shadow, no panel. (No stroke outline: the system font's
+   glyphs are built from overlapping parts, and a stroke draws their seams inside the letters.) */
 static NSAttributedString *Outlined(NSString *str, UIFont *font, UIColor *colour)
 {
   NSShadow *sh = [[NSShadow alloc] init];
-  sh.shadowColor = Grey(0.0, 0.75);
+  sh.shadowColor = Grey(0.0, 0.9);
   sh.shadowOffset = CGSizeMake(0, 1);
-  sh.shadowBlurRadius = 2.0;
+  sh.shadowBlurRadius = 3.0;
   return [[NSAttributedString alloc] initWithString:(str ?: @"")
                                          attributes:@{ NSFontAttributeName : font, NSForegroundColorAttributeName : colour,
-                                                       NSStrokeColorAttributeName : Grey(0.0, 0.85),
-                                                       NSStrokeWidthAttributeName : @(-3.0), NSShadowAttributeName : sh }];
+                                                       NSShadowAttributeName : sh }];
 }
 
 static UIFont *StatusFont(CGFloat size) { return [UIFont systemFontOfSize:size weight:UIFontWeightBold]; }
