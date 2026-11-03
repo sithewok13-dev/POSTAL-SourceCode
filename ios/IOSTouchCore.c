@@ -28,7 +28,6 @@ static const IOSTouchButton _aButtonDefs[BTN_COUNT] = {
   [BTN_CAMERA]      = { "",            KIND_CAMERA,    0,                      0, 12, 12, 0 },
   [BTN_FOLLOWNEXT]  = { "",            KIND_TAP,       IOSTOUCH_REQ_FOLLOWNEXT, 0, 12, 12, 0 },
   [BTN_SLOWMO]      = { "",            KIND_TAP,       IOSTOUCH_REQ_SLOWMO,    1, 12, 15, 0 },
-  [BTN_FREEZECLOSE] = { "",            KIND_CLOSE,     IOSTOUCH_REQ_UNFREEZE,  0, IOSTOUCH_FREEZE_CLOSE_R, 0, 0 },
   [BTN_TRAY_LEVEL]  = { "LEVEL",       KIND_TRAY,      IOSTOUCH_REQ_LEVEL,     0, IOSTOUCH_TRAY_RADIUS, 0, 0 },
   [BTN_TRAY_FOLLOW] = { "FOLLOW",      KIND_TRAY,      IOSTOUCH_REQ_FOLLOW,    0, IOSTOUCH_TRAY_RADIUS, 0, 0 },
   [BTN_TRAY_CHEAT]  = { "CHEAT",       KIND_TRAY,      IOSTOUCH_REQ_CHEAT,     0, IOSTOUCH_TRAY_RADIUS, 0, 0 },
@@ -46,7 +45,6 @@ typedef enum {
   ROLE_BUTTON,
   ROLE_IGNORED, /* does nothing until it lifts */
   ROLE_WHEEL,   /* on the open wheel (or the NEXT/PREV press that opened it) */
-  ROLE_PAN,     /* freeze: drags the view */
 } Role;
 
 typedef struct {
@@ -58,7 +56,7 @@ typedef struct {
   double tDown;        /* when (the touch's clock) */
   unsigned int uSeq;
   int bFired;          /* the hold is over (fired, slid off, or no tap any more) */
-  int bSlid;           /* camera, freeze: moved too far for a tap or a hold */
+  int bSlid;           /* camera: moved too far for a tap */
   int trayButton;      /* MENU held open: the tray button under it, or -1 */
   /* aiming (ROLE_AIM, or a KIND_HOLD button): the point it is measured from, armed past IOSTOUCH_AIM_START */
   double aimOX, aimOY;
@@ -81,7 +79,6 @@ static unsigned int _ulHeldLast = 0;
 static unsigned char _aubPulse[8];  /* one-read presses waiting, per bit (taps quicker than a frame, NEXT/PREV taps) */
 static unsigned int _ulPulseGap = 0;/* bits pulsed last read (a read off before the next) */
 static int _iPick = 0;              /* the wheel's pick, waiting (1 + type) */
-static double _fPanX = 0, _fPanY = 0;
 
 /* FPS */
 static int _bFpsBase = 0;
@@ -169,9 +166,7 @@ int IOSTouchCore_IsShown(int b)
 {
   Init();
   if (b < 0 || b >= BTN_COUNT || C.iMode != IOSTOUCH_GAMEPLAY) return 0;
-  if (C.bFreeze) return b == BTN_CAMERA || b == BTN_FREEZECLOSE;
   switch (b) {
-  case BTN_FREEZECLOSE: return 0;
   case BTN_CHEAT: return C.bShowCheat;
   case BTN_CAMERA: return C.bShowCamera;
   case BTN_FOLLOWNEXT: return C.hud.bFollowing;
@@ -441,9 +436,6 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
 
   if (C.hud.bFullScreen) LayoutTopRow();
   else LayoutStrip(W, H);
-
-  /* freeze's X where MENU is */
-  SetCircle(BTN_FREEZECLOSE, C.aButtons[BTN_MENU].x, fmax(C.aButtons[BTN_MENU].y, IOSTOUCH_FREEZE_CLOSE_R + 4.0), IOSTOUCH_FREEZE_CLOSE_R);
 
   /* messages under the top row, in the middle */
   C.fMessageX = (C.left + C.right) * 0.5;
@@ -774,7 +766,7 @@ static void WheelOpen(Slot *s, int bHeld)
     if (o->role == ROLE_STICK) StopStick();
     if (o != s) o->role = ROLE_IGNORED;
   }
-  C.fSaveRing = C.fLoadRing = C.fMenuRing = C.fCameraRing = 0.0f;
+  C.fSaveRing = C.fLoadRing = C.fMenuRing = 0.0f;
   C.afWheelRing[0] = C.afWheelRing[1] = 0.0f;
   /* a NEXT/PREV tap not read yet would undo the pick */
   memset(_aubPulse, 0, sizeof(_aubPulse));
@@ -871,37 +863,11 @@ void IOSTouchCore_TintIcon(const unsigned char *pubSrc, int ctTexels, int iState
 }
 
 /* ------------------------------------------------------------ the camera */
-static void EndFreeze(void)
-{
-  if (!C.bFreeze) return;
-  C.bFreeze = 0;
-  _ulRequests |= IOSTOUCH_REQ_UNFREEZE;
-}
-
-static void StartFreeze(void)
-{
-  SetTrayOpen(0);
-  for (int i = 0; i < MAX_TOUCHES; i++) {
-    Slot *o = &_aSlots[i];
-    if (!o->touch) continue;
-    if (o->role == ROLE_BUTTON && C.aButtonHeld[o->button] > 0) C.aButtonHeld[o->button]--;
-    if (o->role == ROLE_STICK) StopStick();
-    o->role = ROLE_IGNORED;
-  }
-  C.fSaveRing = C.fLoadRing = C.fMenuRing = C.fCameraRing = 0.0f;
-  C.bFreeze = 1;
-  C.ctCameraTaps++;
-  _fPanX = _fPanY = 0;
-  _ulRequests |= IOSTOUCH_REQ_FREEZE;
-}
-
-/* A camera press moved IOSTOUCH_CAMERA_SLIDE: no tap and no hold any more */
+/* A camera press moved IOSTOUCH_CAMERA_SLIDE from where it landed: no photo
+   (a lift that never did, however long it was held, is one photo) */
 static void CameraMoved(Slot *s, double x, double y)
 {
-  if (!s->bFired && hypot(x - s->xDown, y - s->yDown) >= IOSTOUCH_CAMERA_SLIDE) {
-    s->bSlid = 1;
-    C.fCameraRing = 0.0f;
-  }
+  if (hypot(x - s->xDown, y - s->yDown) >= IOSTOUCH_CAMERA_SLIDE) s->bSlid = 1;
 }
 
 /* ------------------------------------------------------------ the stick and aiming */
@@ -1004,13 +970,6 @@ void IOSTouchCore_TouchBegan(const void *touch, double x, double y, double t)
     WheelUpdateHot();
     return;
   }
-  /* Freeze: its X, the camera (a photo), or a drag of the view */
-  if (C.bFreeze) {
-    s->button = IOSTouchCore_ButtonAt(x, y);
-    s->role = s->button >= 0 ? ROLE_BUTTON : ROLE_PAN;
-    if (s->button >= 0) C.aButtonHeld[s->button]++;
-    return;
-  }
   s->button = IOSTouchCore_ButtonAt(x, y);
   /* An open tray closes at a touch anywhere else (on MENU: only that) */
   if (C.bTrayOpen && !IsTray(s->button)) {
@@ -1080,11 +1039,6 @@ void IOSTouchCore_TouchMoved(const void *touch, double x, double y, double t)
     break;
   case ROLE_AIM:
     AimMoved(s, x, y);
-    break;
-  case ROLE_PAN:
-    _fPanX += x - s->x;
-    _fPanY += y - s->y;
-    if (hypot(x - s->xDown, y - s->yDown) > IOSTOUCH_FREEZE_STILL) s->bSlid = 1; /* (a drag, no photo) */
     break;
   case ROLE_BUTTON: {
     const int b = s->button;
@@ -1199,18 +1153,10 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
       C.fMenuRing = 0.0f;
       break;
     case KIND_TAP:
-    case KIND_CLOSE:
-      if (bOn) {
-        if (p->kind == KIND_CLOSE) EndFreeze();
-        else _ulRequests |= p->ulAction;
-      }
+      if (bOn) _ulRequests |= p->ulAction;
       break;
     case KIND_CAMERA:
-      if (bOn && !s->bFired && !s->bSlid) {
-        if (C.bFreeze || held < IOSTOUCH_CAMERA_HOLD) _ulRequests |= IOSTOUCH_REQ_PHOTO;
-        else StartFreeze();
-      }
-      C.fCameraRing = 0.0f;
+      if (bOn && !s->bSlid) _ulRequests |= IOSTOUCH_REQ_PHOTO; /* (a screenshot, however long it was held) */
       break;
     case KIND_TRAY:
       if (bOn) UseTrayButton(b, t);
@@ -1221,11 +1167,6 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
   }
   else if (s->role == ROLE_STICK) {
     StopStick();
-  }
-  else if (s->role == ROLE_PAN) {
-    /* freeze: a still tap anywhere on the view takes a photo, as the camera icon does */
-    if (!bCancelled && !s->bSlid && hypot(x - s->xDown, y - s->yDown) <= IOSTOUCH_FREEZE_STILL && held < IOSTOUCH_FREEZE_TAP)
-      _ulRequests |= IOSTOUCH_REQ_PHOTO;
   }
   memset(s, 0, sizeof(*s));
   if (C.bWheelOpen) WheelUpdateHot();
@@ -1273,7 +1214,7 @@ static void TickHolds(double now)
   C.afWheelRing[0] = afWheel[0];
   C.afWheelRing[1] = afWheel[1];
 
-  float fSave = 0, fLoad = 0, fMenu = 0, fCam = 0;
+  float fSave = 0, fLoad = 0, fMenu = 0;
   int iDone = -1;
   for (int i = 0; i < MAX_TOUCHES; i++) {
     Slot *s = &_aSlots[i];
@@ -1306,14 +1247,6 @@ static void TickHolds(double now)
         fMenu = (float)fmin(fmax(0.0, (now - s->tDown) / IOSTOUCH_MENU_HOLD), 1.0);
       }
     }
-    else if (b == BTN_CAMERA && !C.bFreeze && !s->bSlid) {
-      if (known - s->tDown >= IOSTOUCH_CAMERA_HOLD) {
-        s->bFired = 1;
-        StartFreeze();
-        break; /* (every touch is let go of) */
-      }
-      fCam = (float)fmin(fmax(0.0, (now - s->tDown) / IOSTOUCH_CAMERA_HOLD), 1.0);
-    }
   }
   if (iDone >= 0) {
     /* one save or load, once: every hold on SAVE and LOAD ends */
@@ -1327,7 +1260,6 @@ static void TickHolds(double now)
   C.fSaveRing = fSave;
   C.fLoadRing = fLoad;
   C.fMenuRing = fMenu;
-  C.fCameraRing = fCam;
 
 }
 
@@ -1363,7 +1295,6 @@ void IOSTouchCore_ReadInput(IOSTouchInput *p)
   if (C.iMode != IOSTOUCH_GAMEPLAY) {
     memset(_aubPulse, 0, sizeof(_aubPulse));
     _iPick = 0;
-    _fPanX = _fPanY = 0;
     return;
   }
   /* the stick: nothing in the dead zone, then up to full speed at
@@ -1402,9 +1333,6 @@ void IOSTouchCore_ReadInput(IOSTouchInput *p)
     p->iSelectWeapon = _iPick;
     _iPick = 0;
   }
-  p->fPanX = (float)_fPanX;
-  p->fPanY = (float)_fPanY;
-  _fPanX = _fPanY = 0;
 }
 
 /* ------------------------------------------------------------ modes */
@@ -1417,16 +1345,14 @@ static void ResetState(void)
     C.iWheelHot = -1;
   }
   C.afWheelRing[0] = C.afWheelRing[1] = 0.0f;
-  C.fSaveRing = C.fLoadRing = C.fMenuRing = C.fCameraRing = 0.0f;
+  C.fSaveRing = C.fLoadRing = C.fMenuRing = 0.0f;
   C.bLevelListOpen = 0;
   _ulRequests = 0;
-  EndFreeze(); /* (asks UNFREEZE, after the requests were dropped) */
   _tLastTick = 0.0;
   _bFpsBase = 0;
   memset(_aubPulse, 0, sizeof(_aubPulse));
   _ulPulseGap = _ulSeen = _ulHeldLast = 0;
   _iPick = 0;
-  _fPanX = _fPanY = 0;
   UpdateAim();
 }
 
@@ -1443,7 +1369,7 @@ void IOSTouchCore_SetMode(int iMode, double now)
 int IOSTouchCore_HoldsGame(void)
 {
   Init();
-  return C.iMode == IOSTOUCH_GAMEPLAY && (C.bWheelOpen || C.bFreeze || C.bLevelListOpen);
+  return C.iMode == IOSTOUCH_GAMEPLAY && (C.bWheelOpen || C.bLevelListOpen);
 }
 
 void IOSTouchCore_Reset(void)
@@ -1460,7 +1386,6 @@ void IOSTouchCore_Reset(void)
   _ulSeen = _ulHeldLast = _ulPulseGap = 0;
   memset(_aubPulse, 0, sizeof(_aubPulse));
   _iPick = 0;
-  _fPanX = _fPanY = 0;
   _bFpsBase = 0;
   _iLevelPick = -1;
   memset(_afLaidBar, 0, sizeof(_afLaidBar));

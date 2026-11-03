@@ -65,11 +65,7 @@ extern "C" {
 #define IOSTOUCH_ROW_GAP           4.0   /* between icons in the top rows */
 #define IOSTOUCH_ARROW_W           24.0  /* the follow arrow */
 #define IOSTOUCH_SLOWMO_W          30.0  /* the slow-motion label */
-#define IOSTOUCH_CAMERA_HOLD       0.5   /* camera held still: freeze */
 #define IOSTOUCH_CAMERA_SLIDE      10.0  /* camera slid this far: neither its tap nor its hold */
-#define IOSTOUCH_FREEZE_CLOSE_R    18.0
-#define IOSTOUCH_FREEZE_TAP        0.3   /* freeze: a tap on the view shorter than this... */
-#define IOSTOUCH_FREEZE_STILL      8.0   /* ...that never moved further than this takes a photo */
 #define IOSTOUCH_MESSAGE_TIME      3.0
 #define IOSTOUCH_VERSION_H         12.0
 #define IOSTOUCH_TOPROW_RADIUS     22.0  /* full screen: the house top row's buttons */
@@ -83,7 +79,6 @@ enum {
   BTN_NEXTWPN, BTN_PREVWPN,
   BTN_SAVE, BTN_LOAD, BTN_MENU,
   BTN_CHEAT, BTN_CAMERA, BTN_FOLLOWNEXT, BTN_SLOWMO,
-  BTN_FREEZECLOSE,
   /* MENU's tray, left to right (LEVEL and FOLLOW only while they apply) */
   /* (LEVEL and FOLLOW, at the left end, come and go with the cheat: the rest stay put; the keyboard under MENU) */
   BTN_TRAY_LEVEL, BTN_TRAY_FOLLOW, BTN_TRAY_CHEAT, BTN_TRAY_SLOW, BTN_TRAY_CAMERA, BTN_TRAY_FPS, BTN_TRAY_KEYS,
@@ -99,7 +94,6 @@ enum {
   KIND_MENU,      /* tap = the menu; held 0.45 s = the tray */
   KIND_TAP,       /* asks for its request as it lifts on it */
   KIND_CAMERA,    /* the camera icon's gestures */
-  KIND_CLOSE,     /* freeze's X */
   KIND_TRAY,      /* the tray's buttons: act as they lift on them */
 };
 
@@ -158,14 +152,13 @@ typedef struct {
   int bAim; double fAimX, fAimY; /* screen terms: right +, up + */
 
   /* hold rings, 0..1 */
-  float fSaveRing, fLoadRing, fMenuRing, afWheelRing[2], fCameraRing;
+  float fSaveRing, fLoadRing, fMenuRing, afWheelRing[2];
 
   int bTrayOpen;
   int bLevelListOpen;
   int ctLevels;
 
   /* camera */
-  int bFreeze;
 
   /* the weapon wheel */
   IOSTouchWeapons wpn;

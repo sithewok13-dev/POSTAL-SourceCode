@@ -59,12 +59,11 @@ enum {
   IOSTOUCH_REQ_FOLLOWNEXT  = 1 << 12, /* the arrow by the camera icon: follow the next person */
   IOSTOUCH_REQ_SLOWMO      = 1 << 13, /* tray SLOW (or the slow-motion label): off -> 1/2 -> 1/4 -> off */
   /* (1 << 14: was the slow-motion speed) */
-  IOSTOUCH_REQ_PHOTO       = 1 << 15, /* camera tap (or, frozen, a still tap on the view): a screenshot */
+  IOSTOUCH_REQ_PHOTO       = 1 << 15, /* camera icon tapped (lifted where it went down, however long): a screenshot */
   /* (1 << 16: was the burst) */
-  IOSTOUCH_REQ_FREEZE      = 1 << 17, /* camera held 0.5 s: freeze and pan (IOSTouchInput.fPanX/Y; a tap
-                                         asks PHOTO; the game holds still: IOSTouch_HoldsGame) */
+  /* (1 << 17: was freeze and pan) */
   /* (1 << 18: was the zoom-out shot) */
-  IOSTOUCH_REQ_UNFREEZE    = 1 << 19, /* freeze ended (its X, or any mode change): back to the game */
+  /* (1 << 19: was the end of freeze) */
 };
 /* IOSTOUCH_REQ_LEVEL is informational: the overlay has opened its own level
    list (IOSTouch_SetLevels); the pick comes from IOSTouch_TakeLevelPick. */
@@ -85,7 +84,6 @@ typedef struct IOSTouchInput {
   float fAimX, fAimY;     /* aim direction in screen terms (right +, up +), unit length when bAim */
   unsigned int ulButtons; /* IOSTOUCH_* */
   int   iSelectWeapon;    /* 0 none, else 1 + the weapon type the wheel picked (one frame) */
-  float fPanX, fPanY;     /* freeze and pan: view drag since the last read, in screen points */
 } IOSTouchInput;
 
 /* The weapon wheel: what the dude has (the game tells the overlay every frame) */
@@ -105,7 +103,7 @@ unsigned int IOSTouch_Update(void *pSDLWindow, int iMode, const IOSTouchHud *pHu
 void IOSTouch_ReadInput(IOSTouchInput *pInput);
 void IOSTouch_SetWeapons(const IOSTouchWeapons *pWeapons);
 void IOSTouch_SetWeaponIcon(int iSlice, const unsigned char *pubRGBA, int iWidth, int iHeight);
-int  IOSTouch_HoldsGame(void);          /* the wheel, freeze or the level list is open: the game should hold still */
+int  IOSTouch_HoldsGame(void);          /* the wheel or the level list is open: the game should hold still */
 void IOSTouch_ShowMessage(const char *pszText, double fSeconds);
 
 /* The level list (tray LEVEL, cheat on): the game calls SetLevels once (names copied, in order);

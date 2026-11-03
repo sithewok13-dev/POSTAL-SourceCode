@@ -262,7 +262,7 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   self.multipleTouchEnabled = YES;
   self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
-  /* the settings: OFF, 1.5x, no FPS, the camera icon on, CLEAN unless set (the cheat icon starts hidden) */
+  /* the settings: no FPS, the camera icon on (the cheat icon starts hidden) */
   IOSTouchCore *k = IOSTouchCore_Settings();
   NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
   k->bShowFps = [d boolForKey:KEY_SHOW_FPS] ? 1 : 0;
@@ -306,8 +306,6 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   else aViews[BTN_TRAY_KEYS].text = @"TYPE";
   if ((s = Symbol(@"camera", 13, white))) aViews[BTN_TRAY_CAMERA].attributedText = s;
   else aViews[BTN_TRAY_CAMERA].text = @"CAM";
-  if ((s = Symbol(@"xmark", 15, white))) aViews[BTN_FREEZECLOSE].attributedText = s;
-  else aViews[BTN_FREEZECLOSE].text = @"X";
   cheatIcon = [CALayer layer];
   cheatIcon.contentsGravity = kCAGravityResizeAspect;
   [aViews[BTN_CHEAT].layer addSublayer:cheatIcon];
@@ -535,7 +533,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   [self setRing:BTN_MENU progress:k->fMenuRing];
   [self setRing:BTN_NEXTWPN progress:k->afWheelRing[0]];
   [self setRing:BTN_PREVWPN progress:k->afWheelRing[1]];
-  [self setRing:BTN_CAMERA progress:k->fCameraRing];
 
   /* the stick, only under the thumb */
   if (k->bStickActive && k->iMode == IOSTOUCH_GAMEPLAY) {
@@ -559,7 +556,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
 
   /* the FPS readout (not under the open tray) */
   SetFrameOf(fpsLabel, &k->rFps);
-  const int bFps = k->bShowFps && k->iMode == IOSTOUCH_GAMEPLAY && !k->bFreeze && !(bTray && !k->bFpsInStrip);
+  const int bFps = k->bShowFps && k->iMode == IOSTOUCH_GAMEPLAY && !(bTray && !k->bFpsInStrip);
   if (fpsLabel.hidden == bFps) fpsLabel.hidden = !bFps;
   if (iFpsLabel != k->iFpsShown) {
     iFpsLabel = k->iFpsShown;

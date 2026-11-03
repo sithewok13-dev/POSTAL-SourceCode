@@ -706,7 +706,25 @@ static void TestCamera(void)
   Up(0, cx, cy);
   ul |= Frame(0.016);
   CHECK(ul == IOSTOUCH_REQ_PHOTO);
-  /* slides (any way) do nothing now: no burst, no zoom-out, no slow motion; and no hold either */
+  /* a long press: still one photo (as it lifts), nothing while held; the game never holds still for it */
+  Down(0, cx, cy);
+  ul = Frames(2.0);
+  CHECK(ul == 0 && !IOSTouchCore_HoldsGame() && IOSTouchCore_IsShown(BTN_FIRE));
+  Move(0, cx + 4, cy + 3); /* (a little wobble is still a tap) */
+  Up(0, cx + 4, cy + 3);
+  ul = Frame(0.016) | Frames(0.5);
+  CHECK(ul == IOSTOUCH_REQ_PHOTO);
+  /* slid 10 pt and back: nothing */
+  Down(0, cx, cy);
+  Move(0, cx + 12, cy);
+  Move(0, cx, cy);
+  Up(0, cx, cy);
+  CHECK(Frames(0.1) == 0);
+  /* iOS took the touch away: nothing */
+  Down(0, cx, cy);
+  Cancel(0, cx, cy);
+  CHECK(Frames(0.1) == 0);
+  /* slides (any way) do nothing: no burst, no zoom-out, no slow motion */
   const double adx[4] = { 15, -15, 0, 0 }, ady[4] = { 0, 0, 40, -20 };
   for (int k = 0; k < 4; k++) {
     Down(0, cx, cy);
@@ -714,7 +732,7 @@ static void TestCamera(void)
     ul = Frames(0.8);
     Up(0, cx + adx[k], cy + ady[k]);
     ul |= Frame(0.016);
-    CHECK(ul == 0 && !K->bFreeze);
+    CHECK(ul == 0 && !IOSTouchCore_HoldsGame());
   }
   /* the slow-motion label shows while on; a tap on it asks for the next speed too */
   char buf[16];
@@ -731,52 +749,11 @@ static void TestCamera(void)
   CHECK(IOSTouchCore_IsShown(BTN_FOLLOWNEXT));
   Tap(BTN_FOLLOWNEXT);
   CHECK(Frame(0.016) == IOSTOUCH_REQ_FOLLOWNEXT);
-  /* held still 0.5 s: freeze; only the camera and X show; the game holds */
+  /* a camera tap on a mode change's far side asks nothing more */
   Down(0, cx, cy);
-  ul = Frames(0.4);
-  CHECK(ul == 0 && K->fCameraRing > 0.6f);
-  ul = Frames(0.2);
-  CHECK(ul == IOSTOUCH_REQ_FREEZE && K->bFreeze && IOSTouchCore_HoldsGame());
-  CHECK(!IOSTouchCore_IsShown(BTN_FIRE) && IOSTouchCore_IsShown(BTN_FREEZECLOSE) && IOSTouchCore_IsShown(BTN_CAMERA));
+  IOSTouchCore_SetMode(IOSTOUCH_HIDDEN, _now);
   Up(0, cx, cy);
   CHECK(Frames(0.1) == 0);
-  /* a drag pans */
-  Down(1, 300, 200);
-  Move(1, 320, 190);
-  Move(1, 330, 185);
-  IOSTouchInput in = Read();
-  CHECK(fabsf(in.fPanX - 30) < 1e-4f && fabsf(in.fPanY + 15) < 1e-4f);
-  in = Read();
-  CHECK(in.fPanX == 0 && in.fPanY == 0);
-  Up(1, 330, 185);
-  /* a still tap anywhere on the view: a photo; a long press there: none */
-  Down(1, 400, 250);
-  Move(1, 404, 253);
-  Frames(0.1);
-  Up(1, 404, 253);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_PHOTO && K->bFreeze);
-  Down(1, 400, 250);
-  Frames(0.5);
-  Up(1, 400, 250);
-  CHECK(Frame(0.016) == 0);
-  Down(1, 400, 250);
-  Move(1, 412, 250);
-  Move(1, 402, 250); /* (moved, came back: a drag) */
-  Up(1, 402, 250);
-  CHECK(Frame(0.016) == 0);
-  /* a camera tap: a photo; still frozen */
-  Tap(BTN_CAMERA);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_PHOTO && K->bFreeze);
-  /* X: back */
-  Tap(BTN_FREEZECLOSE);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_UNFREEZE && !K->bFreeze && !IOSTouchCore_HoldsGame());
-  /* a mode change ends a freeze too */
-  Down(0, cx, cy);
-  Frames(0.7);
-  Up(0, cx, cy);
-  CHECK(K->bFreeze);
-  IOSTouchCore_SetMode(IOSTOUCH_HIDDEN, _now);
-  CHECK(!K->bFreeze && (Frame(0.016) & IOSTOUCH_REQ_UNFREEZE));
   /* the camera hidden: nothing there */
   Phone14();
   IOSTouchCore_Settings()->bShowCamera = 0;
