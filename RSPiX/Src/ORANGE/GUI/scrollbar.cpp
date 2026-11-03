@@ -693,7 +693,7 @@ void RScrollBar::Do(	// Returns nothing.
 	// Call base.
 	RGuiItem::Do(pie);
 
-#ifdef MOBILE
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)  // Added: iOS: taps choose menu items (the Android port's code)
 	//if (pie->sUsed == FALSE && pie->type == RInputEvent::Mouse)
 	if ( pie->type == RInputEvent::Mouse)
 	{

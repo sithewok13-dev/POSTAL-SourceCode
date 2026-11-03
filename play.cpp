@@ -3390,6 +3390,11 @@ class CPlayInput : public CPlay
 					{
 					ie.type	= RInputEvent::None;
 					rspGetNextInputEvent(&ie);
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+					// Added: iOS: a tap resumes, as the key does
+					if (ie.type == RInputEvent::Mouse && ie.sButtons)
+						bResume	= true;
+#endif
 					if (ie.type == RInputEvent::Key)
 						{
 						if ((ie.lKey & 0x0000FFFF) == lKey)
@@ -4859,6 +4864,11 @@ class CPlayCutscene : public CPlay
 					if (((rspGetNextInputEvent(&ie) == 1) && (ie.type == RInputEvent::Key))
 						|| IsXInputButtonPressed())
 						break;
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+					// Added: iOS: a tap goes on, as a key does
+					if (ie.type == RInputEvent::Mouse && ie.sButtons)
+						break;
+#endif
 					}
 				}
 			}
