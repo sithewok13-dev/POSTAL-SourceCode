@@ -202,6 +202,11 @@ int16_t ScoreGetName(char* pszName);
 // Returns the highest multiplayer score.
 int16_t ScoreHighestKills(CRealm* pRealm);
 
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+// Added: iOS: the status strip's two lines as plain text (score.cpp)
+void ScoreGetStatusText(CRealm* pRealm, char* pszLine1, int iLen1, char* pszLine2, int iLen2);
+#endif
+
 #endif //SCORE_H
 
 //////////////////////////////////////////////////////////////////////////////

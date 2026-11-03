@@ -33,6 +33,16 @@ typedef struct IOSTouchHud {
   int   bFollowing;      /* the follow cam is following someone else */
   int   iSlowMo;         /* 0 normal, 2 half speed, 4 quarter speed */
   unsigned int uLevel;   /* changes with every level started or loaded */
+  /* Full-screen play (the game draws no status strip and no weapon bar): what
+     they showed, for the overlay to draw. All zero/empty outside play. */
+  int   bFullScreen;     /* 1: afTopBar/afTopText/afTopGap are empty; use the standard top row */
+  char  szStatus[160];   /* the strip's first line, e.g. "Population 38 Hostiles 30 Killed 0 (0% / 87%)" */
+  char  szGoal[160];     /* its second line while the game shows it, e.g. "You must kill 87% of the hostiles." */
+  int   iHealth;         /* health as the bar showed it: % of full (100; more with the cheat), -1: no dude */
+  int   iKevlar;         /* kevlar layers (body armour), 0 none */
+  int   iAmmo;           /* ammo of the weapon in hand, -1: none to show (infinite) */
+  const char *pszWeapon; /* name of the weapon in hand, or NULL */
+  int   bDead;           /* the dude is dead: the game restarts the level on FIRE */
 } IOSTouchHud;
 
 /* What the player asked for (IOSTouch_Update's result), done by the game side */

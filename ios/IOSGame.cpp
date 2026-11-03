@@ -9,6 +9,7 @@
 #include "SampleMaster.h"
 #include "input.h"
 #include "play.h"
+#include "score.h"
 #include "IOSGame.h"
 #include "IOSTouch.h"
 #include "IOSBot.h"
@@ -503,6 +504,37 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 		IOSBot_Think(prealm, pdude);
 	}
 
+// Full-screen play: the strip's text and the weapon bar's numbers, for the overlay
+static void FillFullScreenHud(IOSTouchHud* phud)
+	{
+	phud->bFullScreen = 1;
+	phud->iHealth = -1;
+	phud->iAmmo = -1;
+	if (!s_prealm)
+		return;
+	ScoreGetStatusText(s_prealm, phud->szStatus, sizeof(phud->szStatus), phud->szGoal, sizeof(phud->szGoal));
+	if (s_pdude)
+		{
+		// As the bar shows it: a percentage of full health (at least 1 while alive)
+		int iHp = s_pdude->m_sOrigHitPoints > 0 ? s_pdude->m_stockpile.m_sHitPoints * 100 / s_pdude->m_sOrigHitPoints : 0;
+		if (iHp < 1 && s_pdude->m_stockpile.m_sHitPoints > 0)
+			iHp = 1;
+		phud->iHealth = s_pdude->IsDead() ? 0 : iHp;
+		phud->iKevlar = s_pdude->m_stockpile.m_sKevlarLayers;
+		phud->bDead = s_pdude->IsDead() ? 1 : 0;
+		CDude::WeaponType wt = s_pdude->GetCurrentWeapon();
+		for (int i = 0; i < IOSGAME_WHEEL_SLICES; i++)
+			if (s_aWheel[i].type == wt)
+				{
+				phud->pszWeapon = s_aWheel[i].pszName;
+				CThing::ClassIDType id;
+				int16_t* psNum = NULL;
+				s_pdude->GetWeaponInfo(wt, &id, &psNum);
+				phud->iAmmo = (wt == CDude::SemiAutomatic || !psNum) ? -1 : *psNum;	// the machine gun never runs out
+				}
+		}
+	}
+
 static void TopBar(IOSTouchHud* phud)
 	{
 	// The game's status strip: the top 40 of 480 lines; its text the left ~650 of
@@ -537,8 +569,9 @@ void IOSGame_Present(void* pSDLWindow)
 
 	IOSTouchHud hud;
 	memset(&hud, 0, sizeof(hud));
-	TopBar(&hud);
+	// (no status strip in full-screen play: TopBar's rectangles stay empty)
 	hud.bCheatOn = s_bCheat;
+	FillFullScreenHud(&hud);
 	hud.bFollowing = s_bFollow;
 	hud.iSlowMo = s_iSlow;
 	hud.uLevel = s_uLevel;
@@ -715,6 +748,8 @@ U32 IOSGame_Input(U32 input)
 		return IOSBot_Input(input);
 	if (s_bFollow)
 		return input & ~(INPUT_FIRE | INPUT_EXECUTE | INPUT_DUCK);	// the dude waits while the camera is away
+	if ((s_in.ulButtons & IOSTOUCH_FIRE) && s_pdude && s_pdude->IsDead())
+		input |= INPUT_REVIVE;					// dead: FIRE restarts the level (the game's revive key)
 	if (s_in.ulButtons & IOSTOUCH_FIRE)			input |= INPUT_FIRE;
 	if (s_in.ulButtons & IOSTOUCH_DUCK)			input |= INPUT_DUCK;
 	if (s_in.ulButtons & IOSTOUCH_EXECUTE)		input |= INPUT_EXECUTE;

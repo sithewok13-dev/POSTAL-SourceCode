@@ -401,10 +401,19 @@
 #define VIEW_X									0
 #define VIEW_Y									0 
 #define VIEW_W									wideScreenWidth
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+// Added: iOS: the level fills the whole screen; the status strip and the
+// weapon bar are drawn by the touch overlay instead (ios/IOSTouch.m)
+#define IOS_FULLSCREEN							1
+#define VIEW_H									480
+#define FILM_Y									0
+#else
+#define IOS_FULLSCREEN							0
 #define VIEW_H									400
+#define FILM_Y									40
+#endif
 
 #define FILM_X									0
-#define FILM_Y									40
 
 // Scaling values
 #define FILM_INCDEC_SCALE					0.05
@@ -2413,7 +2422,7 @@ class CPlayStatus : public CPlay
 				// Render it now so it appears in tandem with the top bar: unless 
 				// its the last demo level for the game where we don't want the
 				// bars to let the player know that they are not under control.
-				if (!g_bLastLevelDemo)
+				if (!g_bLastLevelDemo && !IOS_FULLSCREEN)
 					{
 					ToolBarRender(
 						pinfo->Realm()->m_phood, 
@@ -2537,7 +2546,7 @@ class CPlayStatus : public CPlay
 						// If its the last level then don't draw the top and bottom, for
 						// a letterbox look that lets the player know they don't have
 						// control for this demo
-						if (!g_bLastLevelDemo)
+						if (!g_bLastLevelDemo && !IOS_FULLSCREEN)
 							{
 							// Update the realm (or Score) status
 							bUpdateRealm	= ScoreUpdateDisplay(

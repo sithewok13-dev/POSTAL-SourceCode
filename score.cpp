@@ -1499,3 +1499,79 @@ int16_t ScoreHighestKills(CRealm* pRealm)
 //////////////////////////////////////////////////////////////////////////////
 // EOF
 //////////////////////////////////////////////////////////////////////////////
+
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+//////////////////////////////////////////////////////////////////////////////
+// Added: iOS: the status strip's two lines as plain text, for the touch
+// overlay to draw over a full-screen view (single-player modes; the same
+// formats and values ScoreUpdateDisplay prints). The goal line is empty once
+// it would have gone from the strip (STATUS_DISPLAY_TIMEOUT).
+//////////////////////////////////////////////////////////////////////////////
+void ScoreGetStatusText(CRealm* pRealm, char* pszLine1, int iLen1, char* pszLine2, int iLen2)
+{
+	pszLine1[0] = '\0';
+	pszLine2[0] = '\0';
+	if (!pRealm)
+		return;
+	int16_t sMinutes = pRealm->m_lScoreTimeDisplay / 60000;
+	int16_t sSeconds = (pRealm->m_lScoreTimeDisplay / 1000) % 60;
+	const char* pszFmt = g_apszScoreDisplayText[pRealm->m_ScoringMode];
+	switch (pRealm->m_ScoringMode)
+	{
+		case CRealm::Standard:
+			snprintf(pszLine1, iLen1, pszFmt, pRealm->m_sPopulation, pRealm->m_sHostiles, pRealm->m_sHostileKills,
+				pRealm->m_sHostileKills * 100 / ((pRealm->m_sHostileBirths != 0) ? pRealm->m_sHostileBirths : 1),
+				(int16_t) pRealm->m_dKillsPercentGoal);
+			break;
+		case CRealm::Timed:
+			snprintf(pszLine1, iLen1, pszFmt, sMinutes, sSeconds, pRealm->m_sPopulationDeaths);
+			break;
+		case CRealm::TimedGoal:
+			snprintf(pszLine1, iLen1, pszFmt, sMinutes, sSeconds, pRealm->m_sPopulationDeaths,
+				pRealm->m_sKillsGoal - pRealm->m_sPopulationDeaths, pRealm->m_sPopulation);
+			break;
+		case CRealm::TimedFlag:
+		case CRealm::CaptureFlag:
+			snprintf(pszLine1, iLen1, pszFmt, sMinutes, sSeconds);
+			break;
+		case CRealm::Goal:
+			snprintf(pszLine1, iLen1, pszFmt, pRealm->m_sPopulationDeaths,
+				pRealm->m_sKillsGoal - pRealm->m_sPopulationDeaths, sMinutes, sSeconds);
+			break;
+		case CRealm::Checkpoint:
+			snprintf(pszLine1, iLen1, pszFmt, sMinutes, sSeconds, pRealm->m_sFlagsCaptured,
+				pRealm->m_asClassNumThings[CThing::CFlagID] - pRealm->m_sFlagsCaptured);
+			break;
+		default:
+			break;
+	}
+	if (pRealm->m_time.GetGameTime() < g_scoreboard.m_lLastStatusDrawTime + STATUS_DISPLAY_TIMEOUT)
+	{
+		const char* pszGoal = g_apszScoreGoalText[pRealm->m_ScoringMode];
+		switch (pRealm->m_ScoringMode)
+		{
+			case CRealm::Standard:
+				snprintf(pszLine2, iLen2, pszGoal, (int16_t) pRealm->m_dKillsPercentGoal);
+				break;
+			case CRealm::Goal:
+				snprintf(pszLine2, iLen2, pszGoal, pRealm->m_sKillsGoal);
+				break;
+			case CRealm::Timed:
+			case CRealm::TimedGoal:
+			case CRealm::TimedFlag:
+			case CRealm::CaptureFlag:
+			case CRealm::Checkpoint:
+				snprintf(pszLine2, iLen2, "%s", pszGoal);
+				break;
+			default:
+				break;
+		}
+	}
+	// The strip's formats pad with runs of spaces for its fixed layout: squeeze them
+	for (char* psz = pszLine1; *psz; psz++)
+		while (psz[0] == ' ' && psz[1] == ' ')
+			memmove(psz, psz + 1, strlen(psz));
+	while (pszLine1[0] == ' ')
+		memmove(pszLine1, pszLine1 + 1, strlen(pszLine1));
+}
+#endif
