@@ -13,6 +13,7 @@
 #include "doofus.h"
 #include "input.h"
 #include "IOSBot.h"
+#include "IOSGame.h"
 
 static double	s_dMoveVel		= 0;
 static double	s_dMoveAngle	= 0;
@@ -31,13 +32,6 @@ static int32_t	s_lBestAt		= 0;		// when it last got closer
 static U16		s_aidSkip[4];				// targets given up on lately
 static int32_t	s_alSkipUntil[4];
 
-// Weapons it likes to show off (owned ones only; the cheat gives them all)
-static const CDude::WeaponType s_aShowOff[] =
-	{
-	CDude::SemiAutomatic, CDude::ShotGun, CDude::SprayCannon, CDude::Rocket,
-	CDude::Heatseeker, CDude::FlameThrower, CDude::Grenade, CDude::FireBomb,
-	CDude::Napalm, CDude::DoubleBarrel,
-	};
 
 void IOSBot_NewLevel(CRealm* prealm)
 	{
@@ -99,6 +93,24 @@ static CDoofus* FindTarget(CRealm* prealm, CDude* pdude)
 	return pbest;
 	}
 
+// Is the line from the dude to (x, z) clear of walls and terrain?
+static bool ClearShot(CRealm* prealm, CDude* pdude, double x, double z)
+	{
+	return prealm->IsPathClear((int16_t)pdude->GetX(), (int16_t)pdude->GetY(), (int16_t)pdude->GetZ(),
+		4.0, (int16_t)x, (int16_t)z, 40);
+	}
+
+// A weapon that suits the range (owned ones only; autoplay has the cheat's arsenal)
+static void PickWeaponForRange(CDude* pdude, double dist)
+	{
+	static const CDude::WeaponType aNear[] = { CDude::ShotGun, CDude::FlameThrower, CDude::DoubleBarrel, CDude::SprayCannon };
+	static const CDude::WeaponType aMid[]  = { CDude::SemiAutomatic, CDude::SprayCannon, CDude::ShotGun, CDude::FireBomb };
+	static const CDude::WeaponType aFar[]  = { CDude::Rocket, CDude::Heatseeker, CDude::Grenade, CDude::Napalm, CDude::SemiAutomatic };
+	const CDude::WeaponType* a = dist < 90 ? aNear : (dist < 200 ? aMid : aFar);
+	int n = dist < 90 ? 4 : (dist < 200 ? 4 : 5);
+	pdude->SetWeapon(a[rand() % n], false);
+	}
+
 void IOSBot_Think(CRealm* prealm, CDude* pdude)
 	{
 	int32_t lNow = prealm->m_time.GetGameTime();
@@ -107,28 +119,46 @@ void IOSBot_Think(CRealm* prealm, CDude* pdude)
 	s_bAim = false;
 	s_dMoveVel = 0;
 
-	// Done: the level's goal met (or 4 minutes up) -> end it
-	if (prealm->IsEndOfLevelGoalMet(false) || lNow - s_lLevelStart > 4 * 60 * 1000)
-		{
+	// Done: the level's goal met -> press the end key (a standard level wants it
+	// pressed as well as the kills; other modes end on their own). 4 minutes
+	// without getting there -> IOSGame moves on to another level.
+	bool bGoal = (prealm->m_ScoringMode == CRealm::Standard) ? prealm->IsEndOfLevelGoalMet(true)
+	                                                          : prealm->IsEndOfLevelGoalMet(false);
+	if (bGoal)
 		prealm->m_bPressedEndLevelKey = true;
-		return;
-		}
-
-	// Every 6-10 s, another weapon to show off
-	if (lNow >= s_lNextWeapon)
+	if (lNow - s_lLevelStart > 4 * 60 * 1000)
 		{
-		int n = (int)(sizeof(s_aShowOff) / sizeof(s_aShowOff[0]));
-		pdude->SetWeapon(s_aShowOff[rand() % n], false);
-		s_lNextWeapon = lNow + 6000 + rand() % 4000;
+		IOSGame_AutoNext();
+		s_lLevelStart = lNow;	// once
 		}
 
 	CDoofus* ptarget = FindTarget(prealm, pdude);
 	if (!ptarget)
+		{
+		// Nobody to chase: wander, a new heading every 3 s
+		static int32_t s_lWanderUntil = 0;
+		static double s_dWander = 0;
+		if (lNow >= s_lWanderUntil)
+			{
+			s_dWander = rand() % 360;
+			s_lWanderUntil = lNow + 3000;
+			}
+		s_dMoveVel = 0.6;
+		s_dMoveAngle = s_dWander;
 		return;
+		}
 	double dx = ptarget->GetX() - pdude->GetX();
 	double dz = ptarget->GetZ() - pdude->GetZ();
 	double dist = sqrt(dx * dx + dz * dz);
 	double dAngle = AngleTo(dx, dz);
+	bool bClear = ClearShot(prealm, pdude, ptarget->GetX(), ptarget->GetZ());
+
+	// A weapon for the range, now and then (every 6-10 s)
+	if (lNow >= s_lNextWeapon)
+		{
+		PickWeaponForRange(pdude, dist);
+		s_lNextWeapon = lNow + 6000 + rand() % 4000;
+		}
 
 	// A new target: start measuring progress towards it
 	if (ptarget->GetInstanceID() != s_idTarget)
@@ -137,13 +167,13 @@ void IOSBot_Think(CRealm* prealm, CDude* pdude)
 		s_dBestDist = dist;
 		s_lBestAt = lNow;
 		}
-	else if (dist < s_dBestDist - 10)
+	else if (dist < s_dBestDist - 10 || (bClear && dist < 260))
 		{
-		s_dBestDist = dist;
+		s_dBestDist = MIN(dist, s_dBestDist);
 		s_lBestAt = lNow;
 		}
-	// No closer for 8 s: give up on this one for 20 s and try another
-	if (lNow - s_lBestAt > 8000 && dist > 140)
+	// No closer (and no clear shot) for 8 s: give up on this one for 20 s
+	if (lNow - s_lBestAt > 8000)
 		{
 		static int s_iSkip = 0;
 		s_aidSkip[s_iSkip] = s_idTarget;
@@ -173,22 +203,20 @@ void IOSBot_Think(CRealm* prealm, CDude* pdude)
 		{
 		s_dMoveVel = 1.0;
 		s_dMoveAngle = s_dDetourAngle;
-		s_uInput |= INPUT_RUN;
 		}
-	else if (dist > (bWrithing ? 18 : 140))
+	else if (dist > (bWrithing ? 18 : 140) || !bClear)
 		{
+		// Close in (and round whatever blocks the shot)
 		s_dMoveVel = 1.0;
 		s_dMoveAngle = dAngle;
-		if (dist > 260)
-			s_uInput |= INPUT_RUN;
 		}
 
-	// Aim at the target; fire when in range (execute the wounded up close)
+	// Aim at the target; fire when in range with a clear line (execute the wounded up close)
 	s_bAim = true;
 	s_dAimAngle = dAngle;
 	if (bWrithing && dist <= 24)
 		s_uInput |= INPUT_EXECUTE;
-	else if (dist < 260)
+	else if (dist < 260 && (bClear || dist < 120))
 		s_uInput |= INPUT_FIRE;
 	}
 

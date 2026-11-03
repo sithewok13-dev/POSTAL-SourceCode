@@ -31,7 +31,7 @@ enum {
 class CCamera;
 
 // Every frame of play (play.cpp CoreLoopRender, after Update): the realm, the player, the camera
-void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera);
+void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLive);
 // Every frame shown, before IOSGame_Present (Bdisp): the frame as 0xAARRGGBB pixels, for photos
 void IOSGame_FrameShown(const uint32_t* pulARGB, int iWidth, int iHeight);
 // Freeze and pan: moves the camera's 2D target by the player's drag
@@ -58,6 +58,12 @@ double IOSGame_TimeScale(void);
 
 // The quick save slot's file (rspix path)
 const char* IOSGame_QuickSaveFile(void);
+
+// Autoplay: leave this level for another random one
+void IOSGame_AutoNext(void);
+
+// Play() (play.cpp) is running: levels, their intros and score screens (not the main menu)
+void IOSGame_InPlay(bool bIn);
 
 // Autoplay is running (the bot drives the dude)
 bool IOSGame_Autoplay(void);

@@ -28,7 +28,7 @@
 #define KEY_SHOW_FPS    @"iosTouchShowFps"
 #define KEY_SHOW_CAMERA @"iosTouchShowCamera"
 #define KEY_CAM_KINDS   @"iosTouchCameraKinds"
-#define KEY_SHOW_CHEAT  @"iosTouchShowCheat"
+/* (the cheat icon is not kept: the cheat itself starts off each launch, and the icon with it) */
 
 #define CAMERA_SOUND 1108 /* iOS's shutter */
 #define BURST_SOUND  1104 /* a short tick, for a burst's later shots */
@@ -250,6 +250,7 @@ typedef struct {
   int iFpsLabel;
   double tMessageShown;
   UIView *cameraFlash;
+  CAShapeLayer *autoRing; /* autoplay: the long press filling */
   /* the wheel */
   UIView *wheelView;
   CAShapeLayer *wheelDisc, *wheelNeedle;
@@ -268,7 +269,7 @@ typedef struct {
   UISelectionFeedbackGenerator *selTick;
   UIImpactFeedbackGenerator *lightTap;
   /* the settings as saved */
-  int iGyroModeSaved, iGyroSensSaved, bFpsSaved, bCameraSaved, iKindsSaved, bCheatSaved;
+  int iGyroModeSaved, iGyroSensSaved, bFpsSaved, bCameraSaved, iKindsSaved;
   int iLooksKey;
 }
 - (void)refresh;
@@ -320,7 +321,7 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   self.multipleTouchEnabled = YES;
   self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
-  /* the settings: OFF, 1.5x, no FPS, the camera icon on, CLEAN, no cheat icon unless set */
+  /* the settings: OFF, 1.5x, no FPS, the camera icon on, CLEAN unless set (the cheat icon starts hidden) */
   GyroSetup();
   IOSTouchCore *k = IOSTouchCore_Settings();
   NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
@@ -340,13 +341,11 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     const int kinds = (int)[d integerForKey:KEY_CAM_KINDS] & (IOSTOUCH_PHOTO_CLEAN | IOSTOUCH_PHOTO_HUD | IOSTOUCH_PHOTO_HUDBTNS);
     k->iPhotoKinds = kinds ? kinds : IOSTOUCH_PHOTO_CLEAN;
   }
-  k->bShowCheat = [d boolForKey:KEY_SHOW_CHEAT] ? 1 : 0;
   iGyroModeSaved = k->iGyroMode;
   iGyroSensSaved = k->iGyroSens;
   bFpsSaved = k->bShowFps;
   bCameraSaved = k->bShowCamera;
   iKindsSaved = k->iPhotoKinds;
-  bCheatSaved = k->bShowCheat;
 
   for (int i = 0; i < 2; i++) {
     aTrayBack[i] = MakeBack(IOSTOUCH_TRAY_BACK);
@@ -446,6 +445,12 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   cameraFlash.userInteractionEnabled = NO;
   [self addSubview:cameraFlash];
 
+  autoRing = MakeRing();
+  autoRing.lineWidth = 4.0;
+  autoRing.bounds = CGRectMake(0, 0, 72, 72);
+  autoRing.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(36, 36) radius:34 startAngle:-M_PI_2 endAngle:3 * M_PI_2 clockwise:YES].CGPath;
+  [self.layer addSublayer:autoRing];
+
   selTick = [[UISelectionFeedbackGenerator alloc] init];
   lightTap = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
 
@@ -543,7 +548,11 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
 
 - (void)setRing:(int)b progress:(CGFloat)f
 {
-  CAShapeLayer *ring = aRings[b];
+  [self setRingLayer:aRings[b] progress:f];
+}
+
+- (void)setRingLayer:(CAShapeLayer *)ring progress:(CGFloat)f
+{
   const BOOL bHide = f <= 0.0;
   if (ring.hidden != bHide) ring.hidden = bHide;
   if (!bHide && ring.strokeEnd != f) ring.strokeEnd = f;
@@ -565,7 +574,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
     const int bShown = IOSTouchCore_IsShown(b);
     if (l.hidden == bShown) l.hidden = !bShown;
     if (!bShown) continue;
-    if (b >= BTN_TRAY_FIRST) [self placeButton:b]; /* (the tray's change with what it holds) */
+    [self placeButton:b]; /* (the tray changes with what it holds; the strip when FPS is switched) */
     const int bLit = IOSTouchCore_IsLit(b), bOn = IOSTouchCore_IsOn(b);
     CGFloat alpha = (bLit || bOn || b >= BTN_TRAY_FIRST) ? 1.0 : IOSTOUCH_IDLE_ALPHA;
     if (b == BTN_TRAY_GYRO && !k->bGyroAvailable) alpha *= 0.45;
@@ -630,7 +639,8 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   if (versionLabel.hidden == bTray) versionLabel.hidden = !bTray;
 
   /* the FPS readout (not under the open tray) */
-  const int bFps = k->bShowFps && k->iMode == IOSTOUCH_GAMEPLAY && !k->bFreeze && !bTray;
+  SetFrameOf(fpsLabel, &k->rFps);
+  const int bFps = k->bShowFps && k->iMode == IOSTOUCH_GAMEPLAY && !k->bFreeze && !(bTray && !k->bFpsInStrip);
   if (fpsLabel.hidden == bFps) fpsLabel.hidden = !bFps;
   if (iFpsLabel != k->iFpsShown) {
     iFpsLabel = k->iFpsShown;
@@ -638,7 +648,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   }
 
   /* the message */
-  const int bMsg = IOSTouchCore_MessageShows(now) && k->iMode == IOSTOUCH_GAMEPLAY;
+  const int bMsg = IOSTouchCore_MessageShows(now) && (k->iMode == IOSTOUCH_GAMEPLAY || k->iMode == IOSTOUCH_AUTOPLAY);
   if (bMsg && tMessageShown != k->tMessage) {
     tMessageShown = k->tMessage;
     messageLabel.text = [NSString stringWithUTF8String:k->szMessage] ?: @"";
@@ -647,6 +657,15 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
     messageLabel.center = CGPointMake(k->fMessageX, k->fMessageY);
   }
   if (messageLabel.hidden == bMsg) messageLabel.hidden = !bMsg;
+
+  /* autoplay: only the long press's ring, round the finger, once it is clearly a press (not a tap) */
+  const int bAutoRing = k->iMode == IOSTOUCH_AUTOPLAY && k->fAutoRing > 0.2f;
+  if (bAutoRing) {
+    [self.layer addSublayer:autoRing]; /* (on top) */
+    /* (above the finger, where it can be seen; below it near the top) */
+    autoRing.position = CGPointMake(k->fAutoX, k->fAutoY >= 90.0 ? k->fAutoY - 50.0 : k->fAutoY + 50.0);
+  }
+  [self setRingLayer:autoRing progress:(bAutoRing ? k->fAutoRing : 0.0)];
 
   [self syncWheel];
   [self syncLevels];
@@ -681,7 +700,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   if (bFpsSaved != k->bShowFps) { bFpsSaved = k->bShowFps; [d setBool:(k->bShowFps ? YES : NO) forKey:KEY_SHOW_FPS]; }
   if (bCameraSaved != k->bShowCamera) { bCameraSaved = k->bShowCamera; [d setBool:(k->bShowCamera ? YES : NO) forKey:KEY_SHOW_CAMERA]; }
   if (iKindsSaved != k->iPhotoKinds) { iKindsSaved = k->iPhotoKinds; [d setInteger:k->iPhotoKinds forKey:KEY_CAM_KINDS]; }
-  if (bCheatSaved != k->bShowCheat) { bCheatSaved = k->bShowCheat; [d setBool:(k->bShowCheat ? YES : NO) forKey:KEY_SHOW_CHEAT]; }
 }
 
 /* Right after a photo's pixels were taken (IOSPhotos), so none of this is in it */
@@ -835,8 +853,11 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
         aIcons[i].hidden = NO;
       }
       else {
-        const char *name = k->wpn.apszName[i];
-        aNames[i].text = [[NSString stringWithUTF8String:(name ? name : "?")] stringByReplacingOccurrencesOfString:@" " withString:@"\n"];
+        /* no icon from the game (the Deathwad has none): its name */
+        const char *name = IOSTouchCore_WheelSliceName(i);
+        NSString *ns = [NSString stringWithUTF8String:(name[0] ? name : "?")];
+        if (!ns) ns = [NSString stringWithCString:name encoding:NSWindowsCP1252StringEncoding];
+        aNames[i].text = [(ns ?: @"?") stringByReplacingOccurrencesOfString:@" " withString:@"\n"];
         aNames[i].textColor = Grey(st == WSTATE_READY ? 1.0 : 0.6, st == WSTATE_NOTFOUND ? 0.45 : 0.95);
         aNames[i].bounds = CGRectMake(0, 0, fmax(sz, arc * 0.9), sz);
         aNames[i].center = CGPointMake(m.x, iy);

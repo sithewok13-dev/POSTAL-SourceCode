@@ -835,6 +835,7 @@ class CDude : public CCharacter
 
 		// Added: iOS: the touch controls' cheat sets this (ios/IOSGame.cpp)
 		void IOS_SetInvincible(bool bOn)	{ m_bInvincible = bOn; }
+		bool IOS_IsInvincible(void)	{ return m_bInvincible; }
 
 		
 	//---------------------------------------------------------------------------

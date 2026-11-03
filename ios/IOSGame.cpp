@@ -47,6 +47,9 @@ static unsigned		s_uLevel			= 0;	// bumped for each new realm
 static CRealm*			s_prealm			= NULL;	// valid only during the frame it was set
 static CDude*			s_pdude			= NULL;
 static bool				s_bLevelsSent	= false;
+static CDude*			s_pdudeInvincibleSet = NULL;	// the dude the cheat made invincible
+static bool				s_bWasInvincible = false;		// ...and whether it already was (the game's own cheat)
+static bool				s_bInPlay		= false;		// inside Play(): levels, their intros and score screens
 
 // Levels the cheat's list and autoplay choose from (Play_InitLevelSelectMenu's)
 #define IOSGAME_MAX_LEVELS 40
@@ -91,7 +94,19 @@ static void ApplyCheat(CDude* pdude)
 	ps->m_sNumHeatseekers = max.m_sNumHeatseekers;
 	if (ps->m_sKevlarLayers < CStockPile::ms_stockpileMax.m_sKevlarLayers)
 		ps->m_sKevlarLayers = CStockPile::ms_stockpileMax.m_sKevlarLayers;
+	if (s_pdudeInvincibleSet != pdude)
+		{
+		s_pdudeInvincibleSet = pdude;
+		s_bWasInvincible = pdude->IOS_IsInvincible();
+		}
 	pdude->IOS_SetInvincible(true);
+	}
+
+static void EndInvincible(void)
+	{
+	if (s_pdude && s_pdudeInvincibleSet == s_pdude)
+		s_pdude->IOS_SetInvincible(s_bWasInvincible);	// as it was before the cheat
+	s_pdudeInvincibleSet = NULL;
 	}
 
 static void SetCheat(bool bOn)
@@ -101,8 +116,10 @@ static void SetCheat(bool bOn)
 	s_bCheat = bOn;
 	// One sound for on and off, from the tray or the icon alike (the owner picks it)
 	PlaySample(g_smidDemonLaugh1, SampleMaster::UserFeedBack);
-	if (!bOn && s_pdude)
-		s_pdude->IOS_SetInvincible(false);	// keeps the weapons, as JK's sithewok
+	if (!bOn && !s_bAutoplay)
+		EndInvincible();					// keeps the weapons, as JK's sithewok
+	if (!bOn && !s_bAutoplay)
+		s_bFollow = false;					// FOLLOW is a cheat's tool: it goes with it
 	IOSTouch_ShowMessage(bOn ? "Cheat on: can't die, every weapon, endless ammo" : "Cheat off", 2.5);
 	}
 
@@ -237,7 +254,8 @@ static void SendWeapons(CDude* pdude)
 static CThing3d* FollowedThing(CRealm* prealm)
 	{
 	CThing* pthing = NULL;
-	if (s_idFollow != CIdBank::IdNil && prealm->m_idbank.GetThingByID(&pthing, s_idFollow) == 0)
+	if (s_idFollow != CIdBank::IdNil && prealm->m_idbank.GetThingByID(&pthing, s_idFollow) == 0
+		&& pthing->GetClassID() == CThing::CPersonID)	// an ID can be reused by another kind of thing
 		return (CThing3d*)pthing;
 	return NULL;
 	}
@@ -312,7 +330,8 @@ enum { PHOTO_NONE = 0, PHOTO_ONE, PHOTO_BURST };
 static int		s_iPhoto		= PHOTO_NONE;	// a grab wanted on the next frame shown
 static int		s_iBurstShot	= 0;			// the shot number in the current burst
 static unsigned	s_uLastBurstAt	= 0;			// the frame shown of the last burst request
-static bool		s_bZoomOut		= false;		// a zoom-out photo wanted on the next frame of play
+static bool		s_bZoomOut		= false;		// a zoom-out photo wanted on the next frame shown
+static CCamera*	s_pcamera		= NULL;		// the play camera, valid while s_prealm is
 static bool		s_bFreeze		= false;		// freeze and pan is open
 static double	s_dPanX = 0, s_dPanY = 0;		// its drag so far, in game pixels
 
@@ -353,8 +372,15 @@ static void SavePhoto(const uint32_t* pul, int w, int h, int iRowFrom, int iRows
 	free(pub);
 	}
 
+static void ZoomOutPhoto(CRealm* prealm, CCamera* pcam);
+
 void IOSGame_FrameShown(const uint32_t* pul, int w, int h)
 	{
+	// The zoom-out photo is drawn after the frame's own snap (a snap uses up
+	// the frame's short-lived sprites, such as tracers)
+	if (s_bZoomOut && s_prealm && s_pcamera)
+		ZoomOutPhoto(s_prealm, s_pcamera);
+	s_bZoomOut = false;
 	if (s_iPhoto == PHOTO_NONE || !pul || w <= 0 || h <= 0)
 		return;
 	// The game's picture without its status strips is lines 40..440 of 480
@@ -424,20 +450,30 @@ void IOSGame_Pan2D(int16_t* psX, int16_t* psY)
 	*psY = (int16_t)(*psY - s_dPanY);
 	}
 
-void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera)
+void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLive)
 	{
-	if (s_bZoomOut && pcamera)
-		{
-		ZoomOutPhoto(prealm, pcamera);
-		s_bZoomOut = false;
-		}
-	if (prealm != s_prealm)
+	// Demos (the attract mode, the ending) play recorded input: leave them alone
+	if (!bLive)
+		return;
+	// A new level: another realm or hood, or the realm's clock started again
+	// (one CRealm serves every level of a Play(), and the in-game menu skips frames)
+	static CRealm* s_prealmSeen = NULL;
+	static CHood* s_phoodSeen = NULL;
+	static int32_t s_lTimeSeen = 0;
+	int32_t lTime = prealm->m_time.GetGameTime();
+	if (prealm != s_prealmSeen || prealm->m_phood != s_phoodSeen || lTime + 1000 < s_lTimeSeen)
 		{
 		s_uLevel++;
 		s_idFollow = CIdBank::IdNil;
+		s_phoodIcons = NULL;
+		s_pdudeInvincibleSet = NULL;
 		if (s_bAutoplay)
 			IOSBot_NewLevel(prealm);
 		}
+	s_prealmSeen = prealm;
+	s_phoodSeen = prealm->m_phood;
+	s_lTimeSeen = lTime;
+	s_pcamera = pcamera;
 	s_prealm = prealm;
 	s_pdude = pdude;
 	s_uLastPlay = s_uPresents;
@@ -455,7 +491,7 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera)
 		FILE* f = fopen(szPath, "w");
 		if (f)
 			{
-			fprintf(f, "x %.1f\ny %.1f\nz %.1f\nrot %.1f\nhp %d\nbullets %d\nshells %d\nweapon %d\nstate %d\ntime %ld\n",
+			fprintf(f, "kills %d\nx %.1f\ny %.1f\nz %.1f\nrot %.1f\nhp %d\nbullets %d\nshells %d\nweapon %d\nstate %d\ntime %ld\n", prealm->m_sHostileKills,
 				pdude->GetX(), pdude->GetY(), pdude->GetZ(), pdude->m_dRot, pdude->m_stockpile.m_sHitPoints,
 				pdude->m_stockpile.m_sNumBullets, pdude->m_stockpile.m_sNumShells, (int)pdude->GetCurrentWeapon(),
 				(int)pdude->m_state, (long)prealm->m_time.GetGameTime());
@@ -521,7 +557,7 @@ void IOSGame_Present(void* pSDLWindow)
 		(void)IOSTouch_TakeLevelPick();
 		// Autoplay: tap through the level's intro and score screens
 		static unsigned s_uLastTap = 0;
-		if (s_bAutoplay && s_uPresents - s_uLastTap > 90)
+		if (s_bAutoplay && s_bInPlay && s_uPresents - s_uLastTap > 90)
 			{
 			s_uLastTap = s_uPresents;
 			SDL_Event ev;
@@ -546,8 +582,16 @@ void IOSGame_Present(void* pSDLWindow)
 		}
 	if (req & IOSTOUCH_REQ_QUICKLOAD)
 		{
-		s_iNext = IOSGAME_NEXT_QUICKLOAD;
-		s_uPlayReq |= IOSGAME_PLAY_ABORT;
+		// Only leave the level if there is a quick save to load
+		RFile file;
+		if (file.Open((char*)IOSGame_QuickSaveFile(), "rb", RFile::LittleEndian) == 0)
+			{
+			file.Close();
+			s_iNext = IOSGAME_NEXT_QUICKLOAD;
+			s_uPlayReq |= IOSGAME_PLAY_ABORT;
+			}
+		else
+			IOSTouch_ShowMessage("No quick save yet: hold SAVE to make one", 2.5);
 		}
 	if (req & IOSTOUCH_REQ_CHEAT)
 		SetCheat(!s_bCheat);
@@ -560,19 +604,20 @@ void IOSGame_Present(void* pSDLWindow)
 		}
 	if ((req & (IOSTOUCH_REQ_AUTOPLAY | IOSTOUCH_REQ_AUTONEXT)) && s_ctLevels > 0)
 		{
+		if (!s_bAutoplay)
+			IOSTouch_ShowMessage("Autoplay: double tap for another level, hold to stop", 3.0);
 		s_bAutoplay = true;
-		s_iNext = IOSGAME_NEXT_LEVEL;
-		s_sNextRealm = (int16_t)(rand() % s_ctLevels);
-		s_uPlayReq |= IOSGAME_PLAY_ABORT;
+		IOSGame_AutoNext();
 		}
 	if (req & IOSTOUCH_REQ_AUTOSTOP)
 		{
 		s_bAutoplay = false;
 		s_bFollow = false;
+		s_iSlow = 0;
 		s_iNext = IOSGAME_NEXT_NONE;
 		s_uPlayReq |= IOSGAME_PLAY_ABORT;
-		if (s_pdude && !s_bCheat)
-			s_pdude->IOS_SetInvincible(false);
+		if (!s_bCheat)
+			EndInvincible();
 		}
 	if (req & IOSTOUCH_REQ_KEYBOARD)
 		{
@@ -620,6 +665,26 @@ void IOSGame_Present(void* pSDLWindow)
 		s_iSlow = s_iSlowSpeed = (s_iSlowSpeed == 2 ? 4 : 2);
 	}
 
+// A random level, never the one just played
+static int16_t s_sLastRealm = -1;
+static int16_t RandomLevel(void)
+	{
+	int16_t s = (int16_t)(rand() % s_ctLevels);
+	if (s == s_sLastRealm && s_ctLevels > 1)
+		s = (int16_t)((s + 1 + rand() % (s_ctLevels - 1)) % s_ctLevels);
+	s_sLastRealm = s;
+	return s;
+	}
+
+void IOSGame_AutoNext(void)
+	{
+	if (s_ctLevels <= 0)
+		return;
+	s_iNext = IOSGAME_NEXT_LEVEL;
+	s_sNextRealm = RandomLevel();
+	s_uPlayReq |= IOSGAME_PLAY_ABORT;
+	}
+
 unsigned IOSGame_TakePlayRequests(void)
 	{
 	unsigned u = s_uPlayReq;
@@ -632,7 +697,7 @@ int IOSGame_TakeNext(int16_t* psRealm)
 	if (s_iNext == IOSGAME_NEXT_NONE && s_bAutoplay && s_ctLevels > 0)
 		{
 		s_iNext = IOSGAME_NEXT_LEVEL;		// a level ended in autoplay: another random one
-		s_sNextRealm = (int16_t)(rand() % s_ctLevels);
+		s_sNextRealm = RandomLevel();
 		}
 	int i = s_iNext;
 	s_iNext = IOSGAME_NEXT_NONE;
@@ -648,6 +713,8 @@ U32 IOSGame_Input(U32 input)
 	{
 	if (s_bAutoplay)
 		return IOSBot_Input(input);
+	if (s_bFollow)
+		return input & ~(INPUT_FIRE | INPUT_EXECUTE | INPUT_DUCK);	// the dude waits while the camera is away
 	if (s_in.ulButtons & IOSTOUCH_FIRE)			input |= INPUT_FIRE;
 	if (s_in.ulButtons & IOSTOUCH_DUCK)			input |= INPUT_DUCK;
 	if (s_in.ulButtons & IOSTOUCH_EXECUTE)		input |= INPUT_EXECUTE;
@@ -663,7 +730,10 @@ U32 IOSGame_Input(U32 input)
 	if (s_in.ulButtons & IOSTOUCH_NEXTWEAPON)	input |= INPUT_WEAPON_NEXT;
 	if (s_in.ulButtons & IOSTOUCH_PREVWEAPON)	input |= INPUT_WEAPON_PREV;
 	if (s_in.iSelectWeapon > 0 && s_pdude)
-		s_pdude->SetWeapon((CDude::WeaponType)(s_in.iSelectWeapon - 1), false);
+		{
+		if (s_pdude->SetWeapon((CDude::WeaponType)(s_in.iSelectWeapon - 1), false))
+			PlaySample(g_smidLoadedWeapon, SampleMaster::UserFeedBack);	// as NEXT/PREV do
+		}
 	return input;
 	}
 
@@ -681,11 +751,11 @@ bool IOSGame_Move(double* pdVel, double* pdAngle)
 	float x = s_in.fMoveX, y = s_in.fMoveY;
 	if (s_bAutoplay)
 		return IOSBot_Move(pdVel, pdAngle);
+	if (s_bFollow)
+		return false;
 	double v = sqrt((double)x * x + (double)y * y);
 	if (v < 0.01)
 		return false;
-	// Walking speed fills the stick up to its run edge (85%), so a light push still moves
-	v /= 0.85;
 	*pdVel = v > 1.0 ? 1.0 : v;
 	*pdAngle = ScreenAngle(x, y);
 	return true;
@@ -695,7 +765,7 @@ bool IOSGame_Aim(double* pdAngle)
 	{
 	if (s_bAutoplay)
 		return IOSBot_Aim(pdAngle);
-	if (!s_in.bAim)
+	if (!s_in.bAim || s_bFollow)
 		return false;
 	*pdAngle = ScreenAngle(s_in.fAimX, s_in.fAimY);
 	return true;
@@ -711,6 +781,11 @@ double IOSGame_TimeScale(void)
 const char* IOSGame_QuickSaveFile(void)
 	{
 	return "savegame/quick.gme";
+	}
+
+void IOSGame_InPlay(bool bIn)
+	{
+	s_bInPlay = bIn;
 	}
 
 bool IOSGame_Autoplay(void)

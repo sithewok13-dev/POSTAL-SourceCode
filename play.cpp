@@ -2777,7 +2777,7 @@ class CPlayInput : public CPlay
 					if (uIOS & IOSGAME_PLAY_QUICKSAVE)
 						{
 						if (Game_SavePlayersGame((char*)IOSGame_QuickSaveFile(), prealm->m_flags.sDifficulty) == SUCCESS)
-							IOSTouch_ShowMessage("Quick saved", 1.5);
+							IOSTouch_ShowMessage("Quick saved (a quick load restarts this level with what you have now)", 3.0);
 						else
 							IOSTouch_ShowMessage("Quick save failed", 2.5);
 						}
@@ -2794,7 +2794,8 @@ class CPlayInput : public CPlay
 					else if (uIOS & IOSGAME_PLAY_SAVESCREEN)
 						{
 						StartMenu(pinfo);
-						ms_iosmenuaction = MenuActionSaveGame;	// as if SAVE were chosen in it
+						if (pinfo->m_bInMenu)
+							ms_iosmenuaction = MenuActionSaveGame;	// as if SAVE were chosen in it
 						}
 					else if (uIOS & IOSGAME_PLAY_MENU)
 						StartMenu(pinfo);
@@ -3994,6 +3995,11 @@ class CPlayRealm : public CPlay
 								s_dIOSCarry -= lIOSStep;
 								if (lIOSStep > 0)
 									prealm->m_time.Update(lIOSStep);
+								// Keep the clock's idea of real time current, so leaving
+								// slow motion or the hold doesn't add a jump
+								prealm->m_time.Suspend();
+								prealm->m_time.Update();
+								prealm->m_time.Resume();
 								}
 							s_lIOSLastReal = rspGetMilliseconds();
 #else
@@ -4042,7 +4048,7 @@ class CPlayRealm : public CPlay
 					CDude* pdudeLocal = pinfo->LocalDudePointer();
 #if PLATFORM_IOS || defined(POSTAL_RIG)
 					// Added: iOS: the touch controls' frame, and the follow cam's target
-					IOSGame_PlayFrame(prealm, pdudeLocal, pinfo->Camera());
+					IOSGame_PlayFrame(prealm, pdudeLocal, pinfo->Camera(), GetInputMode() == INPUT_MODE_LIVE);
 					double dIOSX, dIOSY, dIOSZ;
 					if (IOSGame_CameraTarget(prealm, &dIOSX, &dIOSY, &dIOSZ))
 						{
@@ -4937,6 +4943,11 @@ extern int16_t Play(										// Returns 0 if successfull, non-zero otherwise
 	const int16_t sFrameTime,								// In:  Milliseconds per frame (MP only)
 	RFile* pfileDemoModeDebugMovie)					// In:  File for loading/saving demo mode debug movie
 	{
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+	// Added: iOS: autoplay taps through intros and score screens only in here
+	struct IOSPlayScope { IOSPlayScope() { IOSGame_InPlay(true); } ~IOSPlayScope() { IOSGame_InPlay(false); } } iosPlayScope;
+#endif
+
 	int16_t sResult = 0;
 
 //#ifdef MOBILE

@@ -280,11 +280,11 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
   C.top = inT;
   C.bottom = H - fmax(inB, 8.0);
 
-  /* Bottom right: FIRE, DUCK left of it, EXECUTE straight above (mock v4) */
+  /* Bottom right: FIRE, DUCK left of it, EXECUTE straight above, IOSTOUCH_CLUSTER_GAP edge to edge (house) */
   const double fx = C.right - IOSTOUCH_FIRE_IN_X, fy = C.bottom - IOSTOUCH_FIRE_IN_Y;
   SetCircle(BTN_FIRE, fx, fy, IOSTOUCH_FIRE_RADIUS);
-  SetCircle(BTN_DUCK, fx - IOSTOUCH_CLUSTER_STEP, fy, IOSTOUCH_DUCK_RADIUS);
-  SetCircle(BTN_EXECUTE, fx, fy - IOSTOUCH_CLUSTER_STEP, IOSTOUCH_EXECUTE_RADIUS);
+  SetCircle(BTN_DUCK, fx - (IOSTOUCH_FIRE_RADIUS + IOSTOUCH_CLUSTER_GAP + IOSTOUCH_DUCK_RADIUS), fy, IOSTOUCH_DUCK_RADIUS);
+  SetCircle(BTN_EXECUTE, fx, fy - (IOSTOUCH_FIRE_RADIUS + IOSTOUCH_CLUSTER_GAP + IOSTOUCH_EXECUTE_RADIUS), IOSTOUCH_EXECUTE_RADIUS);
 
   /* The game's status strip: the pills in it, as tall as it less ~5 pt */
   C.rStrip = FracRect(C.hud.afTopBar, W, H);
@@ -303,27 +303,33 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
   SetPill(BTN_LOAD, C.aButtons[BTN_MENU].x - step, cy, sw, ph);
   SetPill(BTN_SAVE, C.aButtons[BTN_LOAD].x - step, cy, sw, ph);
 
-  /* NEXT WPN, PREV WPN: in the status text's gap if two fit, else left of SAVE */
+  /* NEXT WPN, PREV WPN: in the status text's gap if two fit (each as wide
+     as fits, IOSTOUCH_WHEELPILL_MIN_W to _W, 6 pt apart), else left of SAVE */
   const IOSTouchRect rText = FracRect(C.hud.afTopText, W, H);
   const IOSTouchRect rGap = FracRect(C.hud.afTopGap, W, H);
   const double textEnd = rText.bValid ? rText.x1 : C.left;
-  const double ww = IOSTOUCH_WHEELPILL_W;
+  const double gapW = rGap.bValid ? rGap.x1 - rGap.x0 : 0.0;
   int bWheelInGap = 0;
-  if (rGap.x1 - rGap.x0 >= 2.0 * ww + 6.0) {
-    const double mid = (rGap.x0 + rGap.x1) * 0.5;
-    if (mid - IOSTOUCH_WHEELPILL_STEP * 0.5 - ww * 0.5 >= C.left && mid + IOSTOUCH_WHEELPILL_STEP * 0.5 + ww * 0.5 <= C.aButtons[BTN_SAVE].x - sw * 0.5) {
-      SetPill(BTN_NEXTWPN, mid - IOSTOUCH_WHEELPILL_STEP * 0.5, cy, ww, ph);
-      SetPill(BTN_PREVWPN, mid + IOSTOUCH_WHEELPILL_STEP * 0.5, cy, ww, ph);
+  if (gapW >= 2.0 * IOSTOUCH_WHEELPILL_MIN_W + IOSTOUCH_WHEELPILL_GAP) {
+    const double gw = fmin(IOSTOUCH_WHEELPILL_W, fmax(IOSTOUCH_WHEELPILL_MIN_W, floor((gapW - IOSTOUCH_WHEELPILL_GAP - 2.0) * 0.5 + 0.01)));
+    const double half = (gw + IOSTOUCH_WHEELPILL_GAP) * 0.5, mid = (rGap.x0 + rGap.x1) * 0.5;
+    if (mid - half - gw * 0.5 >= C.left && mid + half + gw * 0.5 <= C.aButtons[BTN_SAVE].x - sw * 0.5) {
+      SetPill(BTN_NEXTWPN, mid - half, cy, gw, ph);
+      SetPill(BTN_PREVWPN, mid + half, cy, gw, ph);
       bWheelInGap = 1;
     }
   }
 
-  /* Leftwards from SAVE: (NEXT/PREV WPN if not in the gap), the cheat icon,
-     the camera icon, the follow arrow, the slow-motion label -- each in the
-     strip while it stays right of the status text, the rest in a second row
-     under it, leftwards from the FPS readout at the right. The slots stay
-     put whether or not their icon shows, so nothing moves under a finger. */
+  /* Leftwards from SAVE: the FPS readout while it shows (if the rest below
+     still fits in the strip with it), (NEXT/PREV WPN if not in the gap), the
+     cheat icon, the camera icon, the follow arrow, the slow-motion label --
+     each in the strip while it stays right of the status text, the rest in a
+     second row under it, leftwards from the right (the FPS readout first
+     there, if it isn't in the strip). The slots stay put whether or not
+     their icon shows, so nothing moves under a finger (only switching FPS
+     lays them out again). */
   int aiChain[6], ctChain = 0;
+  const double ww = IOSTOUCH_WHEELPILL_W;
   if (!bWheelInGap) {
     aiChain[ctChain++] = BTN_PREVWPN;
     aiChain[ctChain++] = BTN_NEXTWPN;
@@ -332,26 +338,41 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
   }
   aiChain[ctChain++] = BTN_CHEAT;
   aiChain[ctChain++] = BTN_CAMERA;
+  const int ctMain = ctChain; /* (these must fit for the FPS readout to sit in the strip) */
   aiChain[ctChain++] = BTN_FOLLOWNEXT;
   aiChain[ctChain++] = BTN_SLOWMO;
   SetCircle(BTN_CHEAT, 0, 0, ph * 0.5);
   SetCircle(BTN_CAMERA, 0, 0, ph * 0.5);
   SetCircle(BTN_FOLLOWNEXT, 0, 0, IOSTOUCH_ARROW_W * 0.5);
   SetPill(BTN_SLOWMO, 0, 0, IOSTOUCH_SLOWMO_W, fmin(ph, 24.0));
-  double xr = C.aButtons[BTN_SAVE].x - sw * 0.5 - IOSTOUCH_ROW_GAP;
+  const double x0 = C.aButtons[BTN_SAVE].x - sw * 0.5 - IOSTOUCH_ROW_GAP;
+  const double xMin = fmax(textEnd + IOSTOUCH_ROW_GAP, C.left);
+  C.bFpsInStrip = 0;
+  if (C.bShowFps) {
+    double need = IOSTOUCH_FPS_W + IOSTOUCH_ROW_GAP;
+    for (int k = 0; k < ctMain; k++) need += ButtonW(aiChain[k]) + IOSTOUCH_ROW_GAP;
+    C.bFpsInStrip = x0 - need + IOSTOUCH_ROW_GAP >= xMin;
+  }
+  double xr = x0;
+  if (C.bFpsInStrip) {
+    C.rFps = (IOSTouchRect){ 1, xr - IOSTOUCH_FPS_W, cy - IOSTOUCH_FPS_H * 0.5, xr, cy + IOSTOUCH_FPS_H * 0.5 };
+    xr -= IOSTOUCH_FPS_W + IOSTOUCH_ROW_GAP;
+  }
   int i = 0;
   for (; i < ctChain; i++) {
     const int b = aiChain[i];
     const double w = ButtonW(b);
-    if (xr - w < textEnd + IOSTOUCH_ROW_GAP || xr - w < C.left) break;
+    if (xr - w < xMin) break;
     C.aButtons[b].x = xr - w * 0.5;
     C.aButtons[b].y = cy;
     xr -= w + IOSTOUCH_ROW_GAP;
   }
-  /* the second row: the FPS readout under LOAD and MENU, then what didn't fit */
-  C.rFps = (IOSTouchRect){ 1, C.right - 2.0 - IOSTOUCH_FPS_W, C.fRow2Y - IOSTOUCH_FPS_H * 0.5,
-                           C.right - 2.0, C.fRow2Y + IOSTOUCH_FPS_H * 0.5 };
-  xr = C.rFps.x0 - IOSTOUCH_ROW_GAP - 2.0;
+  /* the second row: the FPS readout under LOAD and MENU (if not in the strip), then what didn't fit */
+  xr = C.right - 2.0;
+  if (!C.bFpsInStrip) {
+    C.rFps = (IOSTouchRect){ 1, xr - IOSTOUCH_FPS_W, C.fRow2Y - IOSTOUCH_FPS_H * 0.5, xr, C.fRow2Y + IOSTOUCH_FPS_H * 0.5 };
+    xr -= IOSTOUCH_FPS_W + IOSTOUCH_ROW_GAP + 2.0;
+  }
   for (; i < ctChain; i++) {
     const int b = aiChain[i];
     const double w = ButtonW(b);
@@ -482,6 +503,7 @@ static void UseTrayButton(int b, double now)
     C.bShowFps = !C.bShowFps;
     _bFpsBase = 0;
     C.iFpsShown = -1;
+    if (C.W > 0) IOSTouchCore_Layout(C.W, C.H, _inL, _inT, _inR, _inB); /* (the readout may go in the strip) */
     break;
   case BTN_TRAY_KEYS:
     _ulRequests |= IOSTOUCH_REQ_KEYBOARD;
@@ -558,6 +580,12 @@ int IOSTouchCore_WheelSliceState(int i)
   if (i < 0 || i >= IOSTouchCore_WheelSlices() || !C.wpn.abOwned[i]) return WSTATE_NOTFOUND;
   if (C.wpn.aiAmmo[i] == 0) return WSTATE_NOAMMO;
   return WSTATE_READY;
+}
+
+const char *IOSTouchCore_WheelSliceName(int i)
+{
+  if (i < 0 || i >= IOSTouchCore_WheelSlices() || !C.wpn.apszName[i]) return "";
+  return C.wpn.apszName[i];
 }
 
 int IOSTouchCore_WheelSliceCount(int i)
@@ -1052,6 +1080,7 @@ void IOSTouchCore_TouchMoved(const void *touch, double x, double y, double t)
   case ROLE_PAN:
     _fPanX += x - s->x;
     _fPanY += y - s->y;
+    if (hypot(x - s->xDown, y - s->yDown) > IOSTOUCH_FREEZE_STILL) s->bSlid = 1; /* (a drag, no photo) */
     break;
   case ROLE_AUTO:
     if (hypot(x - s->xDown, y - s->yDown) >= IOSTOUCH_AUTO_STILL) s->bSlid = 1;
@@ -1200,6 +1229,11 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
   else if (s->role == ROLE_STICK) {
     StopStick();
   }
+  else if (s->role == ROLE_PAN) {
+    /* freeze: a still tap anywhere on the view takes a photo, as the camera icon does */
+    if (!bCancelled && !s->bSlid && hypot(x - s->xDown, y - s->yDown) <= IOSTOUCH_FREEZE_STILL && held < IOSTOUCH_FREEZE_TAP)
+      _ulRequests |= IOSTOUCH_REQ_PHOTO;
+  }
   else if (s->role == ROLE_AUTO) {
     if (!bCancelled && !s->bFired && !s->bSlid && held < IOSTOUCH_AUTO_TAP) {
       if (_tAutoTapLift >= 0 && s->tDown - _tAutoTapLift <= IOSTOUCH_AUTO_DOUBLE
@@ -1250,7 +1284,12 @@ static void TickHolds(double now)
         _tAutoTapLift = -1.0;
       }
       else {
-        ring = fmaxf(ring, (float)fmax(0.0, (now - s->tDown) / IOSTOUCH_AUTO_HOLD));
+        const float f = (float)fmax(0.0, (now - s->tDown) / IOSTOUCH_AUTO_HOLD);
+        if (f > ring) {
+          ring = f;
+          C.fAutoX = s->x;
+          C.fAutoY = s->y;
+        }
       }
     }
     C.fAutoRing = ring > 1.0f ? 1.0f : ring;
@@ -1654,7 +1693,7 @@ int IOSTouchCore_IsOn(int b)
   case BTN_TRAY_FPS: return C.bShowFps;
   case BTN_TRAY_GYRO: return C.bGyroAvailable && C.iGyroMode != IOSTOUCH_GYRO_OFF;
   case BTN_TRAY_CAMERA: return C.bShowCamera;
-  case BTN_TRAY_CHEAT: return C.bShowCheat;
+  case BTN_TRAY_CHEAT: return C.hud.bCheatOn;
   case BTN_TRAY_FOLLOW: return C.hud.bFollowing;
   case BTN_CHEAT: return C.hud.bCheatOn;
   case BTN_CAMERA: return C.bBursting;

@@ -54,19 +54,20 @@ extern "C" {
 #define IOSTOUCH_GYRO_DEFAULT_SENS 1     /* 1.5x */
 /* POSTAL's (PLAN.md, rig/mock.py v4) */
 #define IOSTOUCH_STICK_DEADZONE    0.15
-#define IOSTOUCH_STICK_RUN         0.85  /* pushed past this much of the radius: RUN (no RUN button) */
+#define IOSTOUCH_STICK_RUN         0.60  /* pushed past this much of the radius: RUN (no RUN button); below, walking speed grows with the push */
 #define IOSTOUCH_FIRE_RADIUS       42.0
 #define IOSTOUCH_DUCK_RADIUS       29.0
 #define IOSTOUCH_EXECUTE_RADIUS    31.0
-#define IOSTOUCH_CLUSTER_STEP      88.0  /* FIRE to DUCK (left) and to EXECUTE (up), centre to centre */
+#define IOSTOUCH_CLUSTER_GAP       30.0  /* FIRE to DUCK (left) and to EXECUTE (up), edge to edge (house) */
 #define IOSTOUCH_FIRE_IN_X         60.0  /* FIRE's centre this far in from the usable right edge */
 #define IOSTOUCH_FIRE_IN_Y         62.0  /* ...and up from the usable bottom */
 #define IOSTOUCH_AIM_START         8.0   /* an aiming drag's first 8 pt say nothing */
 #define IOSTOUCH_AIM_LEASH         60.0  /* the point an aim is measured from trails this far behind the thumb */
 #define IOSTOUCH_PILL_W            50.0  /* SAVE, LOAD, MENU */
-#define IOSTOUCH_WHEELPILL_W       38.0  /* NEXT WPN, PREV WPN */
+#define IOSTOUCH_WHEELPILL_W       38.0  /* NEXT WPN, PREV WPN (in the gap: as wide as fits, down to _MIN_W) */
+#define IOSTOUCH_WHEELPILL_MIN_W   34.0
+#define IOSTOUCH_WHEELPILL_GAP     6.0   /* between the two */
 #define IOSTOUCH_PILL_GAP          5.0   /* between SAVE, LOAD, MENU (mock: 55 apart) */
-#define IOSTOUCH_WHEELPILL_STEP    44.0  /* NEXT WPN to PREV WPN, centre to centre */
 #define IOSTOUCH_PILL_MIN_H        24.0
 #define IOSTOUCH_PILL_MAX_H        36.0  /* (an iPad's strip is 68 pt: pills no taller than this) */
 #define IOSTOUCH_STRIP_FRAC        (40.0 / 480.0) /* the strip when the game gives none */
@@ -82,6 +83,8 @@ extern "C" {
 #define IOSTOUCH_BURST_GAP         0.2
 #define IOSTOUCH_BURST_MAX         10
 #define IOSTOUCH_FREEZE_CLOSE_R    18.0
+#define IOSTOUCH_FREEZE_TAP        0.3   /* freeze: a tap on the view shorter than this... */
+#define IOSTOUCH_FREEZE_STILL      8.0   /* ...that never moved further than this takes a photo */
 #define IOSTOUCH_AUTO_TAP          0.3   /* autoplay: a tap is shorter than this... */
 #define IOSTOUCH_AUTO_DOUBLE       0.35  /* ...the second going down this soon after the first lifted... */
 #define IOSTOUCH_AUTO_STILL        10.0  /* ...neither moving this far... */
@@ -160,7 +163,8 @@ typedef struct {
   int aButtonHeld[BTN_COUNT];   /* fingers on each */
   IOSTouchRect rStrip;          /* the game's status strip (points) */
   double fPillH;
-  IOSTouchRect rFps;            /* the FPS readout */
+  IOSTouchRect rFps;            /* the FPS readout (left of SAVE in the strip where there is room, else in the second row) */
+  int bFpsInStrip;
   double fRow2Y;                /* the second top row's middle (icons that don't fit in the strip, the FPS readout) */
   IOSTouchRect arTrayBack[2]; int ctTrayRows;
   IOSTouchRect rPhotoBack;
@@ -178,6 +182,7 @@ typedef struct {
 
   /* hold rings, 0..1 */
   float fSaveRing, fLoadRing, fMenuRing, afWheelRing[2], fCameraRing, fTrayCamRing, fAutoRing;
+  double fAutoX, fAutoY;        /* autoplay: where the long press is (its ring, fAutoRing) */
 
   int bTrayOpen, bPhotoRowOpen;
   int bLevelListOpen;
@@ -242,6 +247,7 @@ double IOSTouchCore_WheelSliceWidth(void);   /* degrees */
 double IOSTouchCore_WheelSliceDeg(int i);    /* its middle, degrees counter-clockwise from pointing right */
 int    IOSTouchCore_WheelSliceState(int i);  /* WSTATE_* */
 int    IOSTouchCore_WheelSliceCount(int i);  /* the ammo it shows, at most 999, or -1 */
+const char *IOSTouchCore_WheelSliceName(int i); /* the game's name for it (drawn where it has no icon), or "" */
 int    IOSTouchCore_WheelPointed(int *pbCancel); /* a slice, IOSTOUCH_WHEEL_CANCEL, or -1 */
 int    IOSTouchCore_WheelNeedle(double *pfDeg);  /* 1 while a sliding thumb points (its direction) */
 /* The middle's words: the title (a weapon's name or ""), its count (-1 none), the hint */

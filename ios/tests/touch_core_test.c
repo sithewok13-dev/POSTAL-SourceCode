@@ -112,6 +112,8 @@ static void CheckLayoutFits(const char *name, double W, double H, double inL, do
   IOSTouchCore_SetLevels((const char *const[]){ "Hwy", "Mine" }, 2);
   IOSTouchCore_Settings()->bShowCheat = 1;
   IOSTouchCore_Settings()->bShowCamera = 1;
+  IOSTouchCore_Settings()->bShowFps = 1;
+  IOSTouchCore_Layout(W, H, inL, inT, inR, inB);
   /* open the tray and PHOTO's row */
   Down(0, BX(BTN_MENU), BY(BTN_MENU));
   Frames(0.6);
@@ -141,6 +143,15 @@ static void CheckLayoutFits(const char *name, double W, double H, double inL, do
       }
     }
   }
+  /* the FPS readout clear of the buttons outside the tray (which hides it) */
+  for (int b = 0; b < BTN_TRAY_FIRST; b++) {
+    if (!IOSTouchCore_IsShown(b)) continue;
+    const IOSTouchButton *p = &K->aButtons[b];
+    if (p->x + p->hw > K->rFps.x0 && p->x - p->hw < K->rFps.x1 && p->y + p->r > K->rFps.y0 && p->y - p->r < K->rFps.y1) {
+      printf("  %s: FPS over button %d\n", name, b);
+      bad = 1;
+    }
+  }
   /* the FPS readout and the version label too */
   if (K->rFps.x0 < inL || K->rFps.x1 > W - inR) { printf("  %s: FPS outside\n", name); bad = 1; }
   if (K->fVersionY + IOSTOUCH_VERSION_H * 0.5 > H - inB) { printf("  %s: version outside\n", name); bad = 1; }
@@ -154,10 +165,16 @@ static void CheckLayoutFits(const char *name, double W, double H, double inL, do
                    BY(BTN_FIRE), BX(BTN_NEXTWPN), BX(BTN_SAVE), BX(BTN_CAMERA), BY(BTN_CAMERA), K->ctTrayRows);
 }
 
+static void OpenTrayAt(void);
+
 static void TestLayout(void)
 {
   printf("layout\n");
   Screen(568, 320, 0, 0, 0, 0, 1);
+  /* iPhone SE: the gap (170..290 of 852 game px) is 80 pt: two 36 pt pills fit in it */
+  CHECK(fabs(K->aButtons[BTN_NEXTWPN].hw - 18) < 1e-9 && BY(BTN_NEXTWPN) == BY(BTN_SAVE));
+  CHECK(BX(BTN_NEXTWPN) - 18 >= 170 * 568 / 852.0 && BX(BTN_PREVWPN) + 18 <= 290 * 568 / 852.0
+        && fabs(Gap(BTN_NEXTWPN, BTN_PREVWPN) - 6) < 1e-9);
   CheckLayoutFits("iPhone SE 568x320", 568, 320, 0, 0, 0, 0);
   Screen(844, 390, 47, 0, 47, 21, 1);
   CheckLayoutFits("iPhone 14 844x390", 844, 390, 47, 0, 47, 21);
@@ -173,15 +190,28 @@ static void TestLayout(void)
   /* iPhone 14 as in rig/mock.py */
   Phone14();
   CHECK(fabs(BX(BTN_FIRE) - 737) < 0.5 && fabs(BY(BTN_FIRE) - 307) < 0.5);
-  CHECK(fabs(BX(BTN_DUCK) - 649) < 0.5 && fabs(BY(BTN_DUCK) - 307) < 0.5);
-  CHECK(fabs(BX(BTN_EXECUTE) - 737) < 0.5 && fabs(BY(BTN_EXECUTE) - 219) < 0.5);
+  /* DUCK left of FIRE, EXECUTE straight above, 30 pt edge to edge (house IOSTOUCH_CLUSTER_GAP) */
+  CHECK(fabs(BY(BTN_DUCK) - BY(BTN_FIRE)) < 1e-9 && fabs(Gap(BTN_FIRE, BTN_DUCK) - 30.0) < 1e-9 && BX(BTN_DUCK) < BX(BTN_FIRE));
+  CHECK(fabs(BX(BTN_EXECUTE) - BX(BTN_FIRE)) < 1e-9 && fabs(Gap(BTN_FIRE, BTN_EXECUTE) - 30.0) < 1e-9 && BY(BTN_EXECUTE) < BY(BTN_FIRE));
+  CHECK(fabs(BX(BTN_DUCK) - 636) < 0.5 && fabs(BY(BTN_EXECUTE) - 204) < 0.5);
   CHECK(fabs(BX(BTN_MENU) - 770) < 0.5 && fabs(BX(BTN_LOAD) - 715) < 0.5 && fabs(BX(BTN_SAVE) - 660) < 0.5);
   CHECK(fabs(K->fPillH - 27.5) < 0.6 && fabs(BY(BTN_MENU) - 16.25) < 0.5);
-  CHECK(fabs(BX(BTN_PREVWPN) - BX(BTN_NEXTWPN) - 44) < 0.01);
+  CHECK(fabs(BX(BTN_PREVWPN) - BX(BTN_NEXTWPN) - 44) < 0.01 && fabs(K->aButtons[BTN_NEXTWPN].hw - 19) < 1e-9);
   /* in the gap (170..290 game px of 1038) */
   CHECK(BX(BTN_NEXTWPN) - 19 >= 170 * 844 / 1038.0 && BX(BTN_PREVWPN) + 19 <= 290 * 844 / 1038.0);
   /* cheat and camera right of the text, in the strip */
   CHECK(BX(BTN_CHEAT) - K->aButtons[BTN_CHEAT].r >= 640 * 844 / 1038.0 && fabs(BY(BTN_CAMERA) - BY(BTN_SAVE)) < 0.01);
+  /* the FPS readout: in the second row while the status text is long; left of SAVE in the strip where there is room */
+  CHECK(fabs((K->rFps.y0 + K->rFps.y1) * 0.5 - K->fRow2Y) < 1e-9);
+  IOSTouchCore_Settings()->bShowFps = 0;
+  OpenTrayAt();
+  Tap(BTN_TRAY_FPS);
+  CHECK(K->bShowFps && !K->bFpsInStrip && K->rFps.y0 > BY(BTN_SAVE));
+  _hud.afTopText[2] = (float)(400.0 / 1038.0); /* a shorter status text */
+  SetHud();
+  CHECK(K->bFpsInStrip && fabs(K->rFps.x1 - (BX(BTN_SAVE) - 25 - IOSTOUCH_ROW_GAP)) < 1e-9
+        && fabs((K->rFps.y0 + K->rFps.y1) * 0.5 - BY(BTN_SAVE)) < 1e-9 && BX(BTN_CHEAT) < K->rFps.x0
+        && BX(BTN_CAMERA) - K->aButtons[BTN_CAMERA].r >= 400 * 844 / 1038.0);
   /* no gap: NEXT/PREV left of SAVE */
   Screen(844, 390, 47, 0, 47, 21, 0);
   CHECK(BX(BTN_PREVWPN) < BX(BTN_SAVE) && BX(BTN_PREVWPN) > BX(BTN_NEXTWPN));
@@ -196,7 +226,7 @@ static void TestStick(void)
   CHECK(!K->bStickActive);
   Down(1, 150, 250);
   CHECK(K->bStickActive && K->fStickOX == 150 && K->fStickOY == 250);
-  Move(1, 150, 250 - 30); /* half way up: walk */
+  Move(1, 150, 250 - 21); /* 35% up: walk (run starts at 60%) */
   IOSTouchInput in = Read();
   CHECK(in.fMoveY > 0.3f && in.fMoveY < 0.6f && fabsf(in.fMoveX) < 1e-4f && !(in.ulButtons & IOSTOUCH_RUN));
   Move(1, 150 + 80, 250); /* past the edge, right: run */
@@ -351,6 +381,8 @@ static void OpenTray(void)
   Up(9, BX(BTN_MENU), BY(BTN_MENU));
 }
 
+static void OpenTrayAt(void) { OpenTray(); }
+
 static void TestTray(void)
 {
   printf("tray\n");
@@ -378,8 +410,10 @@ static void TestTray(void)
   /* CHEAT: shows the icon and asks the cheat on */
   Tap(BTN_TRAY_CHEAT);
   CHECK(K->bShowCheat && (Frame(0.016) & IOSTOUCH_REQ_CHEAT));
+  CHECK(!IOSTouchCore_IsOn(BTN_TRAY_CHEAT)); /* (gold only once the game has it on) */
   _hud.bCheatOn = 1;
   SetHud();
+  CHECK(IOSTouchCore_IsOn(BTN_TRAY_CHEAT));
   CHECK(IOSTouchCore_IsShown(BTN_TRAY_LEVEL) && IOSTouchCore_IsShown(BTN_TRAY_FOLLOW));
   CHECK(fabs(BX(BTN_TRAY_LEVEL) - BX(BTN_TRAY_CHEAT) - 50) < 1e-6 && fabs(BX(BTN_TRAY_FOLLOW) - BX(BTN_MENU)) < 1e-6);
   CHECK(IOSTouchCore_IsShown(BTN_CHEAT));
@@ -438,7 +472,7 @@ static void TestTray(void)
 static IOSTouchWeapons Weapons(void)
 {
   static const char *names[] = { "Machine Gun", "Shotgun", "Spray Cannon", "Grenades", "Missiles", "Heatseekers",
-                                 "Molotovs", "Napalm", "Flamer", "Mines", "Rocket" };
+                                 "Molotovs", "Napalm", "Flamer", "Mines", "Deathwad" };
   IOSTouchWeapons w;
   memset(&w, 0, sizeof(w));
   w.bValid = 1;
@@ -492,6 +526,7 @@ static void TestWheel(void)
   int count;
   IOSTouchCore_WheelMiddle(&title, &count, &hint);
   CHECK(strcmp(title, "Spray Cannon") == 0 && count == 22 && strcmp(hint, "lift to select") == 0);
+  CHECK(strcmp(IOSTouchCore_WheelSliceName(10), "Deathwad") == 0 && strcmp(IOSTouchCore_WheelSliceName(11), "") == 0);
   Up(0, PX(nx, d2, 40), PY(ny, d2, 40));
   CHECK(!K->bWheelOpen && !IOSTouchCore_HoldsGame());
   in = Read();
@@ -653,6 +688,21 @@ static void TestCamera(void)
   in = Read();
   CHECK(in.fPanX == 0 && in.fPanY == 0);
   Up(1, 330, 185);
+  /* a still tap anywhere on the view: a photo; a long press there: none */
+  Down(1, 400, 250);
+  Move(1, 404, 253);
+  Frames(0.1);
+  Up(1, 404, 253);
+  CHECK(Frame(0.016) == IOSTOUCH_REQ_PHOTO && K->bFreeze);
+  Down(1, 400, 250);
+  Frames(0.5);
+  Up(1, 400, 250);
+  CHECK(Frame(0.016) == 0);
+  Down(1, 400, 250);
+  Move(1, 412, 250);
+  Move(1, 402, 250); /* (moved, came back: a drag) */
+  Up(1, 402, 250);
+  CHECK(Frame(0.016) == 0);
   /* a camera tap: a photo; still frozen */
   Tap(BTN_CAMERA);
   CHECK(Frame(0.016) == IOSTOUCH_REQ_PHOTO && K->bFreeze);
@@ -702,13 +752,17 @@ static void TestAutoplay(void)
   /* long press 0.6 s: AUTOSTOP, once */
   Down(0, 300, 100);
   unsigned int ul = Frames(0.5);
-  CHECK(ul == 0);
+  CHECK(ul == 0 && K->fAutoRing > 0.75f && K->fAutoRing < 1.0f && K->fAutoX == 300 && K->fAutoY == 100);
   ul = Frames(0.2);
   CHECK(ul == IOSTOUCH_REQ_AUTOSTOP);
+  CHECK(K->fAutoRing == 0.0f); /* (done: the ring goes) */
   ul = Frames(1.0);
   Up(0, 300, 100);
   ul |= Frames(0.1);
   CHECK(ul == 0);
+  /* the game's hint shows in autoplay too */
+  IOSTouchCore_ShowMessage("Double tap: another level. Hold: stop.", 3.0, _now);
+  CHECK(IOSTouchCore_MessageShows(_now + 1.0) && !IOSTouchCore_MessageShows(_now + 3.5));
   /* a press that moves: nothing; a touch on where FIRE would be: no input */
   Down(0, 300, 100);
   Move(0, 340, 100);
