@@ -840,8 +840,22 @@ class CDude : public CCharacter
 		// without picking the victim): for the touch EXECUTE button to show only then
 		bool IOS_CanExecute(void)
 			{
-			if (m_bDead || m_state == State_Execute || !m_stockpile.m_sMachineGun)
+			if (m_bDead || !m_stockpile.m_sMachineGun)
 				return false;
+			switch (m_state)
+				{
+				case State_Execute:			// (already)
+				case State_Dead: case State_Die: case State_Suicide:
+				case State_BlownUp: case State_Rise: case State_GetUp:
+				case State_PutDown:			// (the machine gun firing)
+				case State_ObjectReleased: case State_PickUp:
+				case State_Throw: case State_ThrowRelease: case State_ThrowDone: case State_ThrowFinish:
+				case State_Launch: case State_LaunchRelease: case State_LaunchDone: case State_LaunchFinish:
+				case State_Shot:
+					return false;			// ProcessInput drops EXECUTE, or SetState refuses it
+				default:
+					break;
+				}
 			U16 idVictim = m_idVictim;
 			bool bFound = FindExecutee();
 			m_idVictim = idVictim;

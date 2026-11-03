@@ -315,6 +315,12 @@ static void SendWeapons(CDude* pdude)
 			}
 		}
 	IOSTouch_SetWeapons(&w);
+	// No slices (dead, no dude): the overlay drops the icons with them, so send them
+	// again once there are slices (a revive in place keeps the hood and the cheat)
+	static int s_ctSent = 0;
+	if (w.ctWeapons == 0 && s_ctSent != 0)
+		s_phoodIcons = NULL;
+	s_ctSent = w.ctWeapons;
 	}
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -582,7 +588,16 @@ void IOSGame_Present(void* pSDLWindow)
 	hud.bFollowing = s_bFollow;
 	hud.iSlowMo = s_iSlow;
 	hud.uLevel = s_uLevel;
-	hud.bCanExecute = (bPlaying && s_pdude && s_pdude->IOS_CanExecute()) ? 1 : 0;
+	// EXECUTE's button: while a press would execute someone (not with the follow cam on,
+	// which holds the dude's buttons); kept up 0.25 s after, so a victim at the edge of
+	// reach doesn't make it flicker
+	static uint32_t s_ulExecUntil = 0;
+	const uint32_t ulNow = SDL_GetTicks();
+	if (bPlaying && !s_bFollow && s_pdude && s_pdude->IOS_CanExecute())
+		s_ulExecUntil = ulNow + 250;
+	else if (!bPlaying || s_bFollow || !s_pdude || s_pdude->IsDead())
+		s_ulExecUntil = 0;
+	hud.bCanExecute = (int32_t)(s_ulExecUntil - ulNow) > 0 ? 1 : 0;
 
 	static unsigned s_uDrawn = 0;
 	unsigned req = IOSTouch_Update(pSDLWindow, iMode, &hud, ++s_uDrawn);
