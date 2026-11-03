@@ -16,8 +16,6 @@ int IOSSupport_PrepareData(void);
 
 // Screen shape for the game's widescreen mode: width / height in landscape.
 double IOSSupport_ScreenAspect(void);
-// The screen's height in landscape, in points.
-double IOSSupport_ScreenHeightPoints(void);
 
 #ifdef __cplusplus
 }

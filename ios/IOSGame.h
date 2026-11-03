@@ -34,9 +34,7 @@ class CCamera;
 void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLive);
 // Every frame shown, before IOSGame_Present (Bdisp): the frame as 0xAARRGGBB pixels, for photos
 void IOSGame_FrameShown(const uint32_t* pulARGB, int iWidth, int iHeight);
-// Freeze and pan: moves the camera's 2D target by the player's drag
-void IOSGame_Pan2D(int16_t* psX, int16_t* psY);
-// Bdisp's palette, for the zoom-out photo (0xAARRGGBB)
+// Bdisp's palette (0xAARRGGBB)
 uint32_t IOS_PaletteARGB(int iIndex);
 // Every frame shown, menus too (Bdisp rspPresentFrame): runs the overlay
 void IOSGame_Present(void* pSDLWindow);

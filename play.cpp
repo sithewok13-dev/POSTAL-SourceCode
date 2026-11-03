@@ -4065,7 +4065,6 @@ class CPlayRealm : public CPlay
 						{
 						int16_t	sX, sY;
 						prealm->Map3Dto2D(dIOSX, dIOSY, dIOSZ, &sX, &sY);
-						IOSGame_Pan2D(&sX, &sY);
 						pinfo->Grip()->TrackTarget(sX, sY, 30);
 						SetSoundLocation(dIOSX, dIOSY, dIOSZ);
 						}
@@ -4076,9 +4075,6 @@ class CPlayRealm : public CPlay
 						// Update grip/camera
 						int16_t	sX, sY;
 						prealm->Map3Dto2D(pdudeLocal->GetX(), pdudeLocal->GetY(), pdudeLocal->GetZ(), &sX, &sY);
-#if PLATFORM_IOS || defined(POSTAL_RIG)
-						IOSGame_Pan2D(&sX, &sY);	// Added: iOS: freeze and pan
-#endif
 						pinfo->Grip()->TrackTarget(sX, sY, 30);
 
 						// Set coordinates for the "ear"

@@ -15,12 +15,6 @@
 #include "camera.h"
 #include "hood.h"
 #if PLATFORM_IOS
-#include "IOSSupport.h"
-#define IOSGAME_SCREEN_H_PT IOSSupport_ScreenHeightPoints()
-#else
-#define IOSGAME_SCREEN_H_PT 390.0	// the rig plays an iPhone 14 in landscape
-#endif
-#if PLATFORM_IOS
 #include "IOSPhotos.h"
 #endif
 
@@ -326,8 +320,6 @@ bool IOSGame_CameraTarget(CRealm* prealm, double* pdX, double* pdY, double* pdZ)
 enum { PHOTO_NONE = 0, PHOTO_ONE };
 static int		s_iPhoto		= PHOTO_NONE;	// a grab wanted on the next frame shown
 static CCamera*	s_pcamera		= NULL;		// the play camera, valid while s_prealm is
-static bool		s_bFreeze		= false;		// freeze and pan is open
-static double	s_dPanX = 0, s_dPanY = 0;		// its drag so far, in game pixels
 
 // Saves pixels (0xAARRGGBB, top row first) as a photo of one kind
 static void SavePhoto(const uint32_t* pul, int w, int h, int iRowFrom, int iRows, const char* pszKind, int iFlags)
@@ -378,14 +370,6 @@ void IOSGame_FrameShown(const uint32_t* pul, int w, int h)
 	SavePhoto(pul, w, h, iTop, iRows, "screenshot", 0);
 #endif
 	s_iPhoto = PHOTO_NONE;
-	}
-
-void IOSGame_Pan2D(int16_t* psX, int16_t* psY)
-	{
-	if (!s_bFreeze)
-		return;
-	*psX = (int16_t)(*psX - s_dPanX);
-	*psY = (int16_t)(*psY - s_dPanY);
 	}
 
 void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLive)
@@ -519,7 +503,6 @@ void IOSGame_Present(void* pSDLWindow)
 		// fires later at the wrong moment.
 		memset(&s_in, 0, sizeof(s_in));
 		req = 0;
-		s_bFreeze = false;
 		(void)IOSTouch_TakeLevelPick();
 		return;
 		}
@@ -572,20 +555,6 @@ void IOSGame_Present(void* pSDLWindow)
 	// Camera
 	if (req & IOSTOUCH_REQ_PHOTO)
 		s_iPhoto = PHOTO_ONE;
-	if (req & IOSTOUCH_REQ_FREEZE)
-		{
-		s_bFreeze = true;
-		s_dPanX = s_dPanY = 0;
-		}
-	if (req & IOSTOUCH_REQ_UNFREEZE)
-		s_bFreeze = false;
-	if (s_bFreeze)
-		{
-		// Points dragged to game pixels: the game is 480 high on the screen
-		double dScale = 480.0 / IOSGAME_SCREEN_H_PT;
-		s_dPanX += s_in.fPanX * dScale;
-		s_dPanY += s_in.fPanY * dScale;	// UIKit points: y grows down, as the scene's does
-		}
 	// Tray SLOW: off -> 1/2 -> 1/4 -> off
 	if (req & IOSTOUCH_REQ_SLOWMO)
 		s_iSlow = (s_iSlow == 0) ? 2 : (s_iSlow == 2 ? 4 : 0);
