@@ -285,7 +285,8 @@ static void TestLayout(void)
       Down(2, ax[k], ay[k]);
       Move(2, ax[k] + 6, ay[k] - 5);
       IOSTouchInput in = Read();
-      CHECK(!in.bAim && !K->bStickActive && in.fMoveX == 0 && in.fMoveY == 0 && !(in.ulButtons & IOSTOUCH_DUCK));
+      CHECK(!in.bAim && !K->bStickActive && !K->bAimStick && in.fMoveX == 0 && in.fMoveY == 0
+            && !(in.ulButtons & (IOSTOUCH_DUCK | IOSTOUCH_FIRE)));
       Frames(k == 1 ? 1.0 : 0.1);
       Up(2, ax[k] + 6, ay[k] - 5);
       CHECK(Frame(0.016) == IOSTOUCH_REQ_RESTART);
@@ -444,25 +445,6 @@ static void TestStick(void)
   Up(1, 153, 252);
   CHECK(!K->bStickActive);
 
-  /* aiming: a drag right of the stick zone, not on a button */
-  Down(2, 500, 200);
-  Move(2, 505, 200); /* first 8 pt: nothing */
-  in = Read();
-  CHECK(!in.bAim);
-  Move(2, 530, 170);
-  in = Read();
-  CHECK(in.bAim && fabsf(in.fAimX * in.fAimX + in.fAimY * in.fAimY - 1.0f) < 1e-4f);
-  CHECK(fabsf(in.fAimX - 0.7071f) < 1e-3f && fabsf(in.fAimY - 0.7071f) < 1e-3f); /* up-right (up +) */
-  Frames(0.5); /* held still: stays */
-  in = Read();
-  CHECK(in.bAim && fabsf(in.fAimX - 0.7071f) < 1e-3f);
-  Move(2, 530 - 200, 170); /* turned back left: the leash answers at once */
-  in = Read();
-  CHECK(in.fAimX < -0.95f);
-  Up(2, 330, 170);
-  in = Read();
-  CHECK(!in.bAim);
-
   /* FIRE: held fires, a drag on it aims */
   Down(3, BX(BTN_FIRE), BY(BTN_FIRE));
   in = Read();
@@ -498,6 +480,117 @@ static void TestStick(void)
   in = Read();
   CHECK(!K->bStickActive && !in.bAim);
   Up(1, 0, 0);
+}
+
+/* ------------------------------------------------------------ the aim stick */
+static int Near(float a, double b) { return fabs(a - b) < 1e-4; }
+
+static void TestAimStick(void)
+{
+  printf("aim stick\n");
+  Phone14();
+  const double ox = 550, oy = 250; /* (the aim area: right of the stick zone, clear of the buttons) */
+  /* it appears where the thumb lands; there, no aim and no fire */
+  Down(2, ox, oy);
+  IOSTouchInput in = Read();
+  CHECK(K->bAimStick && K->fAimStickOX == ox && K->fAimStickOY == oy && !K->bStickActive);
+  CHECK(!in.bAim && !(in.ulButtons & IOSTOUCH_FIRE));
+  /* the dead zone: no aim (the dude keeps facing) */
+  Move(2, ox + 7, oy - 6);
+  in = Read();
+  CHECK(!in.bAim);
+  /* a light push: aims the way the thumb is from the centre, no fire */
+  Move(2, ox + 20, oy - 20);
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, 0.70711) && Near(in.fAimY, 0.70711) && !(in.ulButtons & IOSTOUCH_FIRE));
+  /* the thumb held still: the aim stays, no drift */
+  Frames(1.0);
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, 0.70711) && Near(in.fAimY, 0.70711));
+  /* by position, not by motion: moving back towards the centre (still outside the dead zone) keeps the direction */
+  Move(2, ox + 12, oy - 12);
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, 0.70711) && Near(in.fAimY, 0.70711));
+  /* pushed to 80% of the radius: fires too (a tick); hysteresis down to 70% */
+  const int ctTicks = K->ctAimFireTicks;
+  Move(2, ox + 0.78 * IOSTOUCH_AIM_RADIUS, oy);
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, 1.0) && !(in.ulButtons & IOSTOUCH_FIRE));
+  Move(2, ox + 0.81 * IOSTOUCH_AIM_RADIUS, oy);
+  in = Read();
+  CHECK((in.ulButtons & IOSTOUCH_FIRE) && K->bAimFiring && K->ctAimFireTicks == ctTicks + 1);
+  Move(2, ox + 0.72 * IOSTOUCH_AIM_RADIUS, oy);
+  in = Read();
+  CHECK(in.ulButtons & IOSTOUCH_FIRE); /* (still: above 70%) */
+  Move(2, ox + 0.68 * IOSTOUCH_AIM_RADIUS, oy);
+  in = Read();
+  CHECK(!(in.ulButtons & IOSTOUCH_FIRE) && in.bAim && !K->bAimFiring);
+  Move(2, ox + 0.85 * IOSTOUCH_AIM_RADIUS, oy);
+  CHECK(K->ctAimFireTicks == ctTicks + 2);
+  /* beyond the radius: the knob stays on the edge, the direction follows, the centre stays put */
+  Move(2, ox + 150, oy);
+  in = Read();
+  CHECK(Near(K->fAimStickX, 1.0) && Near(K->fAimStickY, 0.0) && Near(in.fAimX, 1.0) && (in.ulButtons & IOSTOUCH_FIRE));
+  Move(2, ox, oy + 150);
+  in = Read();
+  CHECK(Near(K->fAimStickY, 1.0) && Near(in.fAimY, -1.0) && Near(in.fAimX, 0.0) && K->fAimStickOX == ox && K->fAimStickOY == oy);
+  /* back to the centre: no aim, no fire */
+  Move(2, ox + 3, oy + 2);
+  in = Read();
+  CHECK(!in.bAim && !(in.ulButtons & IOSTOUCH_FIRE));
+  /* lift: the aim and the fire end, the stick goes */
+  Move(2, ox + 100, oy);
+  CHECK(Read().ulButtons & IOSTOUCH_FIRE);
+  Up(2, ox + 100, oy);
+  in = Read();
+  CHECK(!in.bAim && !(in.ulButtons & IOSTOUCH_FIRE) && !K->bAimStick);
+  /* FIRE's drags aim by position too (same dead zone); FIRE stays held */
+  const double fx = BX(BTN_FIRE), fy = BY(BTN_FIRE);
+  Down(3, fx, fy);
+  Move(3, fx + 6, fy);
+  in = Read();
+  CHECK((in.ulButtons & IOSTOUCH_FIRE) && !in.bAim && !K->bAimStick);
+  Move(3, fx, fy - 30);
+  in = Read();
+  CHECK((in.ulButtons & IOSTOUCH_FIRE) && in.bAim && Near(in.fAimY, 1.0));
+  Move(3, fx, fy - 15); /* (moving down, still above where it landed: still up) */
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimY, 1.0));
+  Up(3, fx, fy - 15);
+  in = Read();
+  CHECK(!in.bAim);
+  /* two fingers: the newest to aim wins; it lifting gives the aim back to the other */
+  Down(2, ox, oy);
+  Move(2, ox + 30, oy);          /* right */
+  Down(4, 450, 150);
+  Move(4, 420, 150);             /* left: the newest */
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, -1.0) && K->fAimStickOX == 450);
+  Up(4, 420, 150);
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, 1.0) && K->bAimStick && K->fAimStickOX == ox);
+  Up(2, ox + 30, oy);
+  /* the move stick and the aim stick together */
+  Down(1, 150, 250);
+  Move(1, 150, 250 - 50);
+  Down(2, ox, oy);
+  Move(2, ox - 30, oy);
+  in = Read();
+  CHECK(in.fMoveY > 0.9f && in.bAim && Near(in.fAimX, -1.0) && K->bStickActive && K->bAimStick);
+  Up(1, 0, 0); Up(2, 0, 0);
+  /* the wheel opening lets go of the aim stick (no fire left held) */
+  IOSTouchWeapons w;
+  memset(&w, 0, sizeof(w));
+  w.bValid = 1; w.ctWeapons = 2; w.abOwned[0] = w.abOwned[1] = 1; w.aiAmmo[0] = w.aiAmmo[1] = 5; w.iCurrent = 0;
+  IOSTouchCore_SetWeapons(&w);
+  Down(2, ox, oy);
+  Move(2, ox + 55, oy);
+  CHECK(Read().ulButtons & IOSTOUCH_FIRE);
+  Down(5, BX(BTN_NEXTWPN), BY(BTN_NEXTWPN));
+  Frames(0.5);
+  in = Read();
+  CHECK(K->bWheelOpen && !in.bAim && !(in.ulButtons & IOSTOUCH_FIRE) && !K->bAimStick);
+  Up(5, 0, 0); Up(2, 0, 0);
 }
 
 /* ------------------------------------------------------------ SAVE, LOAD, MENU */
@@ -880,6 +973,7 @@ int main(void)
   TestLayout();
   TestTopRow();
   TestStick();
+  TestAimStick();
   TestSaveLoad();
   TestTray();
   TestWheel();

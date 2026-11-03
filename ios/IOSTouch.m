@@ -183,6 +183,8 @@ typedef struct {
   UIImage *cheatOn, *cheatOff;
   int bCheatIconOn;
   UIView *stickBase, *stickKnob;
+  UIView *aimBase, *aimKnob;   /* the aim stick (as the move stick) */
+  CAShapeLayer *aimFireRing;   /* ...its faint ring where it starts to fire */
   UIView *aTrayBack[2];
   UILabel *versionLabel, *fpsLabel, *messageLabel;
   /* full screen: the game's info, drawn over the game (no panel) */
@@ -328,6 +330,32 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   stickKnob.hidden = YES;
   [self addSubview:stickBase];
   [self addSubview:stickKnob];
+  /* the aim stick: the move stick's look, a faint ring at IOSTOUCH_AIM_FIRE_ON; its knob reddens while it fires */
+  aimBase = [[UIView alloc] initWithFrame:CGRectMake(0, 0, IOSTOUCH_AIM_RADIUS * 2, IOSTOUCH_AIM_RADIUS * 2)];
+  aimBase.backgroundColor = Grey(1.0, 0.08);
+  aimBase.layer.cornerRadius = IOSTOUCH_AIM_RADIUS;
+  aimBase.layer.borderWidth = 1.5;
+  aimBase.layer.borderColor = Grey(1.0, 0.45).CGColor;
+  aimBase.userInteractionEnabled = NO;
+  aimBase.hidden = YES;
+  aimFireRing = [CAShapeLayer layer];
+  aimFireRing.frame = aimBase.bounds;
+  aimFireRing.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(IOSTOUCH_AIM_RADIUS, IOSTOUCH_AIM_RADIUS)
+                                                    radius:IOSTOUCH_AIM_RADIUS * IOSTOUCH_AIM_FIRE_ON
+                                                startAngle:0 endAngle:2 * M_PI clockwise:YES].CGPath;
+  aimFireRing.fillColor = [UIColor clearColor].CGColor;
+  aimFireRing.strokeColor = [UIColor colorWithRed:1.0 green:0.45 blue:0.4 alpha:0.35].CGColor;
+  aimFireRing.lineWidth = 1.0;
+  [aimBase.layer addSublayer:aimFireRing];
+  aimKnob = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 48, 48)];
+  aimKnob.backgroundColor = Grey(1.0, 0.30);
+  aimKnob.layer.cornerRadius = 24;
+  aimKnob.layer.borderWidth = 1.5;
+  aimKnob.layer.borderColor = Grey(1.0, 0.45).CGColor;
+  aimKnob.userInteractionEnabled = NO;
+  aimKnob.hidden = YES;
+  [self addSubview:aimBase];
+  [self addSubview:aimKnob];
 
   versionLabel = MakeLabel(10, 0.55);
   versionLabel.font = [UIFont monospacedDigitSystemFontOfSize:10 weight:UIFontWeightMedium];
@@ -544,6 +572,16 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   else {
     stickBase.hidden = stickKnob.hidden = YES;
   }
+  /* the aim stick, the same way */
+  if (k->bAimStick && k->iMode == IOSTOUCH_GAMEPLAY) {
+    aimBase.center = CGPointMake(k->fAimStickOX, k->fAimStickOY);
+    aimKnob.center = CGPointMake(k->fAimStickOX + k->fAimStickX * IOSTOUCH_AIM_RADIUS, k->fAimStickOY + k->fAimStickY * IOSTOUCH_AIM_RADIUS);
+    aimKnob.backgroundColor = k->bAimFiring ? [UIColor colorWithRed:0.85 green:0.2 blue:0.15 alpha:0.55] : Grey(1.0, 0.30);
+    aimBase.hidden = aimKnob.hidden = NO;
+  }
+  else {
+    aimBase.hidden = aimKnob.hidden = YES;
+  }
 
   /* the tray's backings and the version */
   const int bTray = k->bTrayOpen && k->iMode == IOSTOUCH_GAMEPLAY;
@@ -590,6 +628,10 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   if (w->ctLevelTicks > 0) {
     [selTick selectionChanged];
     w->ctLevelTicks = 0;
+  }
+  if (w->ctAimFireTicks > 0) {
+    [lightTap impactOccurred]; /* (the aim stick began to fire) */
+    w->ctAimFireTicks = 0;
   }
   if (w->ctCameraTaps > 0) {
     [lightTap impactOccurred];

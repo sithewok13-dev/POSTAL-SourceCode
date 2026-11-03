@@ -52,8 +52,11 @@ extern "C" {
 #define IOSTOUCH_CLUSTER_GAP       30.0  /* FIRE to DUCK (left) and to EXECUTE (up), edge to edge (house) */
 #define IOSTOUCH_FIRE_IN_X         60.0  /* FIRE's centre this far in from the usable right edge */
 #define IOSTOUCH_FIRE_IN_Y         62.0  /* ...and up from the usable bottom */
-#define IOSTOUCH_AIM_START         8.0   /* an aiming drag's first 8 pt say nothing */
-#define IOSTOUCH_AIM_LEASH         60.0  /* the point an aim is measured from trails this far behind the thumb */
+/* The aim stick: floating, where the right thumb lands (not on a button), as the move stick on the left */
+#define IOSTOUCH_AIM_RADIUS        IOSTOUCH_STICK_RADIUS /* (the move stick's) */
+#define IOSTOUCH_AIM_DEAD          10.0  /* closer than this to its centre it doesn't aim (the dude keeps facing); also FIRE's drags */
+#define IOSTOUCH_AIM_FIRE_ON       0.80  /* pushed this far (of the radius): it fires too, while held there... */
+#define IOSTOUCH_AIM_FIRE_OFF      0.70  /* ...until back under this (so it doesn't flicker on the edge) */
 #define IOSTOUCH_PILL_W            50.0  /* SAVE, LOAD, MENU */
 #define IOSTOUCH_WHEELPILL_W       38.0  /* NEXT WPN, PREV WPN (in the gap: as wide as fits, down to _MIN_W) */
 #define IOSTOUCH_WHEELPILL_MIN_W   34.0
@@ -151,8 +154,12 @@ typedef struct {
   double fStickOX, fStickOY;    /* where the thumb landed */
   double fStickX, fStickY;      /* -1..1 of the radius, screen axes (y down) */
 
-  /* aiming (for drawing a hint; the game reads IOSTouchInput) */
+  /* aiming (the game reads IOSTouchInput) */
   int bAim; double fAimX, fAimY; /* screen terms: right +, up + */
+  /* the aim stick, only while its thumb is down: its centre, the knob (-1..1 of the radius, screen axes, y
+     down; clamped to the edge), whether it fires */
+  int bAimStick, bAimFiring;
+  double fAimStickOX, fAimStickOY, fAimStickX, fAimStickY;
 
   /* hold rings, 0..1 */
   float fSaveRing, fLoadRing, fMenuRing, afWheelRing[2];
@@ -170,7 +177,7 @@ typedef struct {
   int iWheelHot;
 
   /* haptics the view still has to give (it zeroes them) */
-  int ctWheelTicks, ctCameraTaps, ctLevelTicks;
+  int ctWheelTicks, ctCameraTaps, ctLevelTicks, ctAimFireTicks; /* (ctAimFireTicks: the aim stick began to fire) */
 
   /* a short message (IOSTouch_ShowMessage, or the core's own) */
   char szMessage[192];

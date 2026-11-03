@@ -41,7 +41,7 @@ static const IOSTouchButton _aButtonDefs[BTN_COUNT] = {
 typedef enum {
   ROLE_NONE = 0,
   ROLE_STICK,
-  ROLE_AIM,
+  ROLE_AIM,     /* the right aim stick (floating, where the thumb landed) */
   ROLE_BUTTON,
   ROLE_IGNORED, /* does nothing until it lifts */
   ROLE_DEADTAP, /* dead: a tap on the screen restarts the level (neither moves nor aims) */
@@ -59,10 +59,15 @@ typedef struct {
   int bFired;          /* the hold is over (fired, slid off, or no tap any more) */
   int bSlid;           /* camera: moved too far for a tap */
   int trayButton;      /* MENU held open: the tray button under it, or -1 */
-  /* aiming (ROLE_AIM, or a KIND_HOLD button): the point it is measured from, armed past IOSTOUCH_AIM_START */
+  /* aiming (ROLE_AIM, or a KIND_HOLD button): the centre it is measured from (where it landed), whether
+     it is outside IOSTOUCH_AIM_DEAD now (it aims), whether it ever was (its place among the aiming
+     fingers), its direction (unit, screen terms, up +); the aim stick: the push (0..1 of the radius)
+     and whether it is pushed far enough to fire */
   double aimOX, aimOY;
-  int bAimArmed;
+  int bAimArmed, bAimEver;
   double aimX, aimY;
+  double aimPush;
+  int bAimFire;
   /* the wheel */
   int wheelSlot, bWheelOpener, bWheelHeld, bArmed;
   double wheelOX, wheelOY, wheelAim;
@@ -936,28 +941,35 @@ static void SetStick(double x, double y)
   C.fStickY = dy;
 }
 
-/* An aiming finger moved: the direction of its drag from where it landed
-   (its first IOSTOUCH_AIM_START say nothing); the point it is measured from
-   trails IOSTOUCH_AIM_LEASH behind, so turning back answers at once */
+/* An aiming finger is at (x,y): it aims the way it is from where it landed
+   (the aim stick's centre; FIRE's too), once outside IOSTOUCH_AIM_DEAD --
+   inside it, it doesn't aim (the dude keeps facing the way he did). Held
+   still, the aim stays. The aim stick fires while pushed to
+   IOSTOUCH_AIM_FIRE_ON of its radius, until back under IOSTOUCH_AIM_FIRE_OFF. */
 static void AimMoved(Slot *s, double x, double y)
 {
-  double dx = x - s->aimOX, dy = y - s->aimOY, r = hypot(dx, dy);
-  if (!s->bAimArmed && r < IOSTOUCH_AIM_START) return;
-  if (!s->bAimArmed) {
+  const double dx = x - s->aimOX, dy = y - s->aimOY, r = hypot(dx, dy);
+  s->aimPush = fmin(r / IOSTOUCH_AIM_RADIUS, 1.0);
+  if (r < IOSTOUCH_AIM_DEAD) {
+    s->bAimArmed = 0;
+  }
+  else {
+    if (!s->bAimEver) {
+      s->bAimEver = 1;
+      s->uSeq = ++_uSeq; /* (the newest finger to aim wins) */
+    }
     s->bAimArmed = 1;
-    s->uSeq = ++_uSeq; /* (the newest aim wins) */
-  }
-  if (r > IOSTOUCH_AIM_LEASH) {
-    const double k = (r - IOSTOUCH_AIM_LEASH) / r;
-    s->aimOX += dx * k;
-    s->aimOY += dy * k;
-    dx = x - s->aimOX;
-    dy = y - s->aimOY;
-    r = IOSTOUCH_AIM_LEASH;
-  }
-  if (r > 1e-6) {
     s->aimX = dx / r;
     s->aimY = -dy / r;
+  }
+  if (s->role == ROLE_AIM) {
+    if (!s->bAimFire && s->aimPush >= IOSTOUCH_AIM_FIRE_ON) {
+      s->bAimFire = 1;
+      C.ctAimFireTicks++;
+    }
+    else if (s->bAimFire && s->aimPush < IOSTOUCH_AIM_FIRE_OFF) {
+      s->bAimFire = 0;
+    }
   }
 }
 
@@ -967,12 +979,31 @@ static int AimsNow(const Slot *s)
   return s->role == ROLE_AIM || (s->role == ROLE_BUTTON && C.aButtons[s->button].bAimWhileHeld);
 }
 
-/* The newest aiming finger's direction */
+/* The newest aiming finger's direction; the aim stick to draw (the newest one down) */
 static void UpdateAim(void)
 {
-  const Slot *best = NULL;
+  const Slot *best = NULL, *stick = NULL;
   for (int i = 0; i < MAX_TOUCHES; i++) {
-    if (AimsNow(&_aSlots[i]) && (!best || _aSlots[i].uSeq > best->uSeq)) best = &_aSlots[i];
+    const Slot *s = &_aSlots[i];
+    if (AimsNow(s) && (!best || s->uSeq > best->uSeq)) best = s;
+    if (s->touch && s->role == ROLE_AIM && (!stick || s->uSeq > stick->uSeq)) stick = s;
+  }
+  C.bAimStick = stick != NULL;
+  if (stick) {
+    C.fAimStickOX = stick->aimOX;
+    C.fAimStickOY = stick->aimOY;
+    double kx = (stick->x - stick->aimOX) / IOSTOUCH_AIM_RADIUS, ky = (stick->y - stick->aimOY) / IOSTOUCH_AIM_RADIUS;
+    const double len = sqrt(kx * kx + ky * ky);
+    if (len > 1.0) { /* (the knob stays on the edge; the direction still follows the thumb) */
+      kx /= len;
+      ky /= len;
+    }
+    C.fAimStickX = kx;
+    C.fAimStickY = ky;
+    C.bAimFiring = stick->bAimFire;
+  }
+  else {
+    C.bAimFiring = 0;
   }
   if (!best) {
     C.bAim = 0;
@@ -1072,7 +1103,8 @@ void IOSTouchCore_TouchBegan(const void *touch, double x, double y, double t)
     C.fStickX = C.fStickY = 0.0;
     return;
   }
-  s->role = ROLE_AIM;
+  s->role = ROLE_AIM; /* the aim stick, centred here */
+  UpdateAim();
 }
 
 void IOSTouchCore_TouchMoved(const void *touch, double x, double y, double t)
@@ -1248,6 +1280,9 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
 static unsigned int HeldBits(void)
 {
   unsigned int ul = 0;
+  for (int i = 0; i < MAX_TOUCHES; i++) {
+    if (_aSlots[i].touch && _aSlots[i].role == ROLE_AIM && _aSlots[i].bAimFire) ul |= IOSTOUCH_FIRE; /* (the aim stick pushed full) */
+  }
   for (int b = 0; b < BTN_COUNT; b++) {
     if (C.aButtonHeld[b] && C.aButtons[b].kind == KIND_HOLD) ul |= C.aButtons[b].ulAction;
   }
@@ -1353,6 +1388,7 @@ unsigned int IOSTouchCore_Tick(double now, unsigned int ulFramesDrawn)
 {
   Init();
   if (C.iMode != IOSTOUCH_HIDDEN) TickHolds(now);
+  UpdateAim(); /* (a hold may have opened the wheel, which lets go of the aiming fingers) */
   CountFrames(ulFramesDrawn, now);
   const unsigned int ul = _ulRequests;
   _ulRequests = 0;
