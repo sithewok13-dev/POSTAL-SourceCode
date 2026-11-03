@@ -450,6 +450,9 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     l.font = [UIFont boldSystemFontOfSize:size];
     l.minimumScaleFactor = 9.0 / size;
   }
+  else if (b == BTN_BACK) {
+    l.font = [UIFont boldSystemFontOfSize:10]; /* (as SAVE, LOAD, MENU) */
+  }
   else if (!p->bPill && b >= BTN_NEXTWPN && b <= BTN_MENU) {
     l.font = [UIFont boldSystemFontOfSize:(b <= BTN_PREVWPN ? 9 : 10)]; /* (the house's 22 pt round top row) */
   }
@@ -1074,6 +1077,14 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
 }
 
 /* ---------------------------------------------------------------- touches */
+/* Which touches are the overlay's: in play all of them; in the game's menus only those on BACK -- the
+   rest find SDL's view under it, as mouse clicks, exactly as when the overlay is hidden */
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+{
+  if (self.hidden || !IOSTouchCore_TakesTouchAt(point.x, point.y)) return nil;
+  return [super hitTest:point withEvent:event];
+}
+
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
 {
   for (UITouch *t in touches) {
@@ -1135,7 +1146,7 @@ static void SetMode(int iMode)
 {
   IOSTouchCore_SetMode(iMode, CACurrentMediaTime());
   if (_pOverlay) {
-    /* hidden: SDL gets the touches (as mouse clicks) */
+    /* hidden: SDL gets the touches (as mouse clicks); the menus: all but BACK's (hitTest) */
     _pOverlay.hidden = (iMode == IOSTOUCH_HIDDEN);
     [_pOverlay refresh];
   }

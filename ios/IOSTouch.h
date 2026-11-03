@@ -17,8 +17,10 @@ extern "C" {
 
 /* What the game is doing, which decides what the overlay shows */
 enum {
-  IOSTOUCH_HIDDEN = 0, /* menus, cutscenes, loading: no overlay, touches are SDL mouse clicks */
-  IOSTOUCH_GAMEPLAY,   /* a level is being played */
+  IOSTOUCH_HIDDEN = 0,   /* menus, cutscenes, loading: no overlay, touches are SDL mouse clicks */
+  IOSTOUCH_GAMEPLAY = 1, /* a level is being played */
+  IOSTOUCH_MENU = 2,     /* the game's menus are up: only a BACK button (top left); every other touch is an
+                            SDL mouse click, as in HIDDEN */
 };
 
 /* What the HUD and game state are, for the overlay's layout and context buttons.
@@ -54,7 +56,8 @@ enum {
   IOSTOUCH_REQ_CHEAT       = 1 << 5,  /* toggle the cheat (tray or the cheat icon); the game plays the sound */
   IOSTOUCH_REQ_LEVEL       = 1 << 6,  /* tray LEVEL (cheat on): the level select with every level open */
   IOSTOUCH_REQ_RESTART     = 1 << 7,  /* dead: a tap on the screen restarts the level */
-  /* (1 << 8, 9: were autoplay's) */
+  IOSTOUCH_REQ_BACK        = 1 << 8,  /* IOSTOUCH_MENU: BACK tapped -- the menu's cancel, as Escape */
+  /* (1 << 9: was autoplay's) */
   IOSTOUCH_REQ_KEYBOARD    = 1 << 10, /* tray keyboard: type one of POSTAL's cheat words */
   IOSTOUCH_REQ_FOLLOW      = 1 << 11, /* tray FOLLOW: follow cam on/off */
   IOSTOUCH_REQ_FOLLOWNEXT  = 1 << 12, /* the arrow by the camera icon: follow the next person */

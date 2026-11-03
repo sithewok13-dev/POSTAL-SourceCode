@@ -14,6 +14,8 @@
 #include "IOSTouch.h"
 #include "camera.h"
 #include "hood.h"
+#include "menus.h"	// (menuMain; WishPiX menu.h: GetCurrentMenu)
+extern void IOS_MenuCancel(void);	// Added: iOS: WishPiX/Menu/menu.cpp
 #if PLATFORM_IOS
 #include "IOSPhotos.h"
 #endif
@@ -107,8 +109,9 @@ static void SetCheat(bool bOn)
 	if (bOn == s_bCheat)
 		return;
 	s_bCheat = bOn;
-	// One sound for on and off, from the tray or the icon alike (the owner picks it)
-	PlaySample(g_smidDemonLaugh1, SampleMaster::UserFeedBack);
+	// The laugh when it goes on (from the tray or the icon alike); off is silent
+	if (bOn)
+		PlaySample(g_smidDemonLaugh1, SampleMaster::UserFeedBack);
 	if (!bOn)
 		EndInvincible();					// keeps the weapons, as JK's sithewok
 	if (!bOn)
@@ -159,7 +162,7 @@ static bool Owns(CDude* pdude, CDude::WeaponType type, int16_t sAmmo)
 // The wheel's pictures: cut from the hood's full toolbar picture, where the
 // bottom bar draws each weapon (toolbar.cpp's rectangles, in 640x480 terms).
 // The double barrel borrows the shotgun's; the deathwad has none (its name shows).
-static const struct { CDude::WeaponType type; int16_t x, y, w, h; } s_aIcon[] =
+static const struct { CDude::WeaponType type; int16_t x, y, w, h; bool bFire; } s_aIcon[] =
 	{
 	{ CDude::SemiAutomatic,		123, 443, 48, 23 },
 	{ CDude::ShotGun,				176, 444, 42, 19 },
@@ -174,6 +177,9 @@ static const struct { CDude::WeaponType type; int16_t x, y, w, h; } s_aIcon[] =
 	{ CDude::TimedMine,			599, 443, 30, 26 },
 	{ CDude::BouncingBettyMine,538, 444, 28, 28 },
 	{ CDude::DoubleBarrel,		176, 444, 42, 19 },
+	// The Deathwad (a cheat's secret weapon: a rocket stuffed with napalm, fuel and
+	// grenades) was never on the bar: the missile launcher, in fire colours
+	{ CDude::DeathWad,			306, 442, 54, 21, true },
 	};
 
 static CHood* s_phoodIcons = NULL;	// the hood the icons were last cut from
@@ -226,6 +232,15 @@ static void SendIcons(CRealm* prealm)
 							|| (r - b > 18 && dr * dr + dg * dg + db * db < 48 * 48);	// (the weapons are grey; the bar and its shadows brown)
 						}
 					d[3] = bBack ? 0 : 255;
+					if (s_aIcon[k].bFire)
+						{
+						// its brightness on a dark red -> orange -> yellow ramp
+						int l = (int)(((c >> 16) & 255) * 30 + ((c >> 8) & 255) * 59 + (c & 255) * 11) / 100;
+						l = l * 2 > 255 ? 255 : l * 2;
+						d[0] = (unsigned char)(l < 128 ? 96 + l : 224 + (l - 128) / 4);
+						d[1] = (unsigned char)(l < 128 ? l / 3 : 42 + (l - 128) * 3 / 2);
+						d[2] = (unsigned char)(l < 192 ? 0 : (l - 192) * 2);
+						}
 					}
 			// Clear stray dots: a pixel with at most one solid neighbour
 			for (int pass = 0; pass < 1; pass++)
@@ -518,7 +533,11 @@ void IOSGame_Present(void* pSDLWindow)
 		s_prealm = NULL;
 		s_pdude = NULL;
 		}
-	int iMode = !bPlaying ? IOSTOUCH_HIDDEN : IOSTOUCH_GAMEPLAY;
+	// Out of play, one of the game's menus (not the title menu, where Escape would
+	// only offer to quit): the BACK button, as Escape
+	Menu* pmenu = bPlaying ? NULL : GetCurrentMenu();
+	bool bMenu = pmenu != NULL && pmenu != &menuMain;
+	int iMode = bPlaying ? IOSTOUCH_GAMEPLAY : (bMenu ? IOSTOUCH_MENU : IOSTOUCH_HIDDEN);
 
 	if (!s_bLevelsSent && bPlaying)
 		{
@@ -542,6 +561,8 @@ void IOSGame_Present(void* pSDLWindow)
 	static unsigned s_uDrawn = 0;
 	unsigned req = IOSTouch_Update(pSDLWindow, iMode, &hud, ++s_uDrawn);
 	IOSTouch_ReadInput(&s_in);
+	if (bMenu && (req & IOSTOUCH_REQ_BACK))
+		IOS_MenuCancel();
 	if (!bPlaying)
 		{
 		// Out of play (menus, cutscenes, loading) the buttons can't ask for

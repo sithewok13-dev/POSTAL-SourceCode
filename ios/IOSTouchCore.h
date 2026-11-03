@@ -84,6 +84,7 @@ enum {
   BTN_NEXTWPN, BTN_PREVWPN,
   BTN_SAVE, BTN_LOAD, BTN_MENU,
   BTN_CHEAT, BTN_CAMERA, BTN_FOLLOWNEXT, BTN_SLOWMO,
+  BTN_BACK,      /* IOSTOUCH_MENU only: the menus' BACK, where NEXT WPN sits in full-screen play */
   /* MENU's tray, left to right (LEVEL and FOLLOW only while they apply) */
   /* (LEVEL and FOLLOW, at the left end, come and go with the cheat: the rest stay put; the keyboard under MENU) */
   BTN_TRAY_LEVEL, BTN_TRAY_FOLLOW, BTN_TRAY_CHEAT, BTN_TRAY_SLOW, BTN_TRAY_CAMERA, BTN_TRAY_FPS, BTN_TRAY_KEYS,
@@ -128,7 +129,7 @@ typedef struct {
   /* settings */
   int bShowFps, bShowCamera, bShowCheat;
 
-  int iMode;                    /* IOSTOUCH_HIDDEN / _GAMEPLAY */
+  int iMode;                    /* IOSTOUCH_HIDDEN / _GAMEPLAY / _MENU */
   IOSTouchHud hud;
   double W, H;                  /* the layout's screen, points */
   double left, right, top, bottom; /* the usable part (safe area, at least 8 pt in at the sides and bottom) */
@@ -215,6 +216,10 @@ int  IOSTouchCore_TakeLevelPick(void);
 /* Full screen: the band between the top row's groups (as far as the buttons that show now) and
    the row under the top row, where the status text and the goal go */
 void IOSTouchCore_StatusRects(IOSTouchRect *prTop, IOSTouchRect *prRow2);
+
+/* Whether the overlay takes a touch landing at (x,y) (the view's hit test): everywhere in play; in
+   IOSTOUCH_MENU only on BACK (the rest go on to SDL as mouse clicks); never when hidden */
+int  IOSTouchCore_TakesTouchAt(double x, double y);
 
 /* Buttons */
 int  IOSTouchCore_IsShown(int button);

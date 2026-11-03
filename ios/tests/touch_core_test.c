@@ -612,6 +612,64 @@ static void TestAimStick(void)
   Up(5, 0, 0); Up(2, 0, 0);
 }
 
+/* ------------------------------------------------------------ the game's menus: BACK */
+static void TestMenuBack(void)
+{
+  printf("menus: BACK\n");
+  const double aW[3] = { 568, 844, 956 }, aH[3] = { 320, 390, 440 }, aIn[3] = { 0, 47, 62 }, aB[3] = { 0, 21, 21 };
+  for (int k = 0; k < 3; k++) {
+    Screen(aW[k], aH[k], aIn[k], 0, aIn[k], aB[k], 1);
+    IOSTouchCore_SetMode(IOSTOUCH_MENU, _now);
+    /* only BACK shows, 44 pt round, top left inside the safe area (where NEXT WPN sits in full-screen play) */
+    int ctShown = 0;
+    for (int b = 0; b < BTN_COUNT; b++) ctShown += IOSTouchCore_IsShown(b);
+    const double left = aIn[k] > 8 ? aIn[k] : 8;
+    CHECK(ctShown == 1 && IOSTouchCore_IsShown(BTN_BACK) && K->aButtons[BTN_BACK].r == 22 && !K->aButtons[BTN_BACK].bPill);
+    CHECK(BX(BTN_BACK) == left + 24 && BY(BTN_BACK) == 34 && ButtonInside(BTN_BACK, aIn[k], 0, aW[k] - aIn[k], aH[k] - aB[k]));
+  }
+  Phone14();
+  IOSTouchCore_SetMode(IOSTOUCH_MENU, _now);
+  const double bx = BX(BTN_BACK), by = BY(BTN_BACK);
+  /* the overlay takes touches on BACK (with the usual 6 pt) and nowhere else: those are SDL's clicks */
+  CHECK(IOSTouchCore_TakesTouchAt(bx, by) && IOSTouchCore_TakesTouchAt(bx + 26, by));
+  CHECK(!IOSTouchCore_TakesTouchAt(bx + 40, by) && !IOSTouchCore_TakesTouchAt(422, 195) && !IOSTouchCore_TakesTouchAt(BX(BTN_FIRE), BY(BTN_FIRE))
+        && !IOSTouchCore_TakesTouchAt(150, 250));
+  /* a tap on BACK, however long: REQ_BACK, once */
+  Down(0, bx, by);
+  CHECK(IOSTouchCore_IsLit(BTN_BACK));
+  unsigned int ul = Frames(0.6);
+  Up(0, bx + 3, by + 2);
+  ul |= Frame(0.016) | Frames(0.2);
+  CHECK(ul == IOSTOUCH_REQ_BACK);
+  /* slid off, or 10 pt and back, or cancelled: nothing */
+  Down(0, bx, by); Move(0, bx + 60, by + 40); Up(0, bx + 60, by + 40);
+  Down(0, bx, by); Move(0, bx + 12, by); Move(0, bx, by); Up(0, bx, by);
+  Down(0, bx, by); Cancel(0, bx, by);
+  CHECK(Frames(0.1) == 0);
+  /* touches elsewhere (should one come) do nothing in the overlay: no stick, no aim, no input, no request */
+  Down(1, 150, 250); Move(1, 150, 200);
+  Down(2, 550, 250); Move(2, 600, 250);
+  IOSTouchInput in = Read();
+  CHECK(!K->bStickActive && !K->bAimStick && !in.bAim && in.ulButtons == 0 && in.fMoveX == 0 && in.fMoveY == 0);
+  Up(1, 150, 200); Up(2, 600, 250);
+  CHECK(Frames(0.1) == 0);
+  /* out of the menus: BACK goes (play: the play buttons again; hidden: nothing, the overlay takes no touch) */
+  IOSTouchCore_SetMode(IOSTOUCH_GAMEPLAY, _now);
+  CHECK(!IOSTouchCore_IsShown(BTN_BACK) && IOSTouchCore_IsShown(BTN_FIRE) && IOSTouchCore_ButtonAt(bx, by) != BTN_BACK);
+  IOSTouchCore_SetMode(IOSTOUCH_HIDDEN, _now);
+  CHECK(!IOSTouchCore_IsShown(BTN_BACK) && !IOSTouchCore_TakesTouchAt(bx, by));
+  /* BACK held as the menu closes: no request after */
+  IOSTouchCore_SetMode(IOSTOUCH_MENU, _now);
+  Down(0, bx, by);
+  IOSTouchCore_SetMode(IOSTOUCH_HIDDEN, _now);
+  Up(0, bx, by);
+  CHECK(Frames(0.1) == 0);
+  /* never in play */
+  IOSTouchCore_SetMode(IOSTOUCH_GAMEPLAY, _now);
+  Down(0, bx, by); Up(0, bx, by);
+  CHECK(!(Frames(0.1) & IOSTOUCH_REQ_BACK));
+}
+
 /* ------------------------------------------------------------ SAVE, LOAD, MENU */
 static void TestSaveLoad(void)
 {
@@ -993,6 +1051,7 @@ int main(void)
   TestTopRow();
   TestStick();
   TestAimStick();
+  TestMenuBack();
   TestSaveLoad();
   TestTray();
   TestWheel();

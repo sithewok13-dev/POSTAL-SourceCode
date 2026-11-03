@@ -28,6 +28,7 @@ static const IOSTouchButton _aButtonDefs[BTN_COUNT] = {
   [BTN_CAMERA]      = { "",            KIND_CAMERA,    0,                      0, 12, 12, 0 },
   [BTN_FOLLOWNEXT]  = { "",            KIND_TAP,       IOSTOUCH_REQ_FOLLOWNEXT, 0, 12, 12, 0 },
   [BTN_SLOWMO]      = { "",            KIND_TAP,       IOSTOUCH_REQ_SLOWMO,    1, 12, 15, 0 },
+  [BTN_BACK]        = { "BACK",        KIND_TAP,       IOSTOUCH_REQ_BACK,      0, IOSTOUCH_TOPROW_RADIUS, 0, 0 },
   [BTN_TRAY_LEVEL]  = { "LEVEL",       KIND_TRAY,      IOSTOUCH_REQ_LEVEL,     0, IOSTOUCH_TRAY_RADIUS, 0, 0 },
   [BTN_TRAY_FOLLOW] = { "FOLLOW",      KIND_TRAY,      IOSTOUCH_REQ_FOLLOW,    0, IOSTOUCH_TRAY_RADIUS, 0, 0 },
   [BTN_TRAY_CHEAT]  = { "CHEAT",       KIND_TRAY,      IOSTOUCH_REQ_CHEAT,     0, IOSTOUCH_TRAY_RADIUS, 0, 0 },
@@ -175,7 +176,9 @@ static int IsTopRow(int b)
 int IOSTouchCore_IsShown(int b)
 {
   Init();
-  if (b < 0 || b >= BTN_COUNT || C.iMode != IOSTOUCH_GAMEPLAY) return 0;
+  if (b < 0 || b >= BTN_COUNT) return 0;
+  if (C.iMode == IOSTOUCH_MENU) return b == BTN_BACK; /* (the menus: BACK alone) */
+  if (C.iMode != IOSTOUCH_GAMEPLAY || b == BTN_BACK) return 0;
   switch (b) {
   case BTN_CHEAT: return C.bShowCheat;
   case BTN_CAMERA: return C.bShowCamera;
@@ -491,6 +494,9 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
 
   if (C.hud.bFullScreen) LayoutTopRow();
   else LayoutStrip(W, H);
+
+  /* the menus' BACK: where NEXT WPN sits in full-screen play, whichever layout this is */
+  SetCircle(BTN_BACK, C.left + 2.0 + IOSTOUCH_TOPROW_RADIUS, fmax(_inT, 8.0) + 26.0, IOSTOUCH_TOPROW_RADIUS);
 
   /* messages under the top row, in the middle */
   C.fMessageX = (C.left + C.right) * 0.5;
@@ -1044,6 +1050,12 @@ void IOSTouchCore_TouchBegan(const void *touch, double x, double y, double t)
   s->wheelSlot = -1;
   s->button = -1;
 
+  if (C.iMode == IOSTOUCH_MENU && IOSTouchCore_ButtonAt(x, y) == BTN_BACK) {
+    s->role = ROLE_BUTTON; /* (the menus: only BACK; the view passes every other touch on to SDL) */
+    s->button = BTN_BACK;
+    C.aButtonHeld[BTN_BACK]++;
+    return;
+  }
   if (C.iMode != IOSTOUCH_GAMEPLAY) {
     s->role = ROLE_IGNORED;
     return;
@@ -1148,6 +1160,7 @@ void IOSTouchCore_TouchMoved(const void *touch, double x, double y, double t)
     AimMoved(s, x, y);
     break;
   case ROLE_BUTTON: {
+    if (s->button == BTN_BACK && hypot(x - s->xDown, y - s->yDown) >= IOSTOUCH_TAP_SLIDE) s->bSlid = 1; /* (slid: no BACK) */
     const int b = s->button;
     const int kind = C.aButtons[b].kind;
     if (C.aButtons[b].bAimWhileHeld) AimMoved(s, x, y);
@@ -1260,7 +1273,7 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
       C.fMenuRing = 0.0f;
       break;
     case KIND_TAP:
-      if (bOn) _ulRequests |= p->ulAction;
+      if (bOn && !(b == BTN_BACK && s->bSlid)) _ulRequests |= p->ulAction;
       break;
     case KIND_CAMERA:
       if (bOn && !s->bSlid) _ulRequests |= IOSTOUCH_REQ_PHOTO; /* (a screenshot, however long it was held) */
@@ -1477,6 +1490,13 @@ void IOSTouchCore_SetMode(int iMode, double now)
   C.iMode = iMode;
   ResetState();
   if (C.bTrayOpen) PlaceTray();
+}
+
+int IOSTouchCore_TakesTouchAt(double x, double y)
+{
+  Init();
+  if (C.iMode == IOSTOUCH_GAMEPLAY) return 1;
+  return C.iMode == IOSTOUCH_MENU && IOSTouchCore_ButtonAt(x, y) == BTN_BACK;
 }
 
 int IOSTouchCore_HoldsGame(void)
