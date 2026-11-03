@@ -3167,9 +3167,6 @@ class CPlayInput : public CPlay
 							pinfo->SetGameState_NextRealm();
 
 #ifndef DISABLE_SP_CHALLENGE_SCORES
-#if PLATFORM_IOS || defined(POSTAL_RIG)
-							if (!IOSGame_Autoplay())	// Added: iOS: autoplay goes straight on
-#endif
 							// Display high scores
 							ScoreDisplayHighScores(prealm);
 #endif
@@ -4962,10 +4959,6 @@ extern int16_t Play(										// Returns 0 if successfull, non-zero otherwise
 	const int16_t sFrameTime,								// In:  Milliseconds per frame (MP only)
 	RFile* pfileDemoModeDebugMovie)					// In:  File for loading/saving demo mode debug movie
 	{
-#if PLATFORM_IOS || defined(POSTAL_RIG)
-	// Added: iOS: autoplay taps through intros and score screens only in here
-	struct IOSPlayScope { IOSPlayScope() { IOSGame_InPlay(true); } ~IOSPlayScope() { IOSGame_InPlay(false); } } iosPlayScope;
-#endif
 
 	int16_t sResult = 0;
 

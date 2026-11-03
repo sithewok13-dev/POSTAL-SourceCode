@@ -18,7 +18,6 @@ add_executable(POSTAL MACOSX_BUNDLE
   ${POSTAL_SRCS}
   ${CMAKE_CURRENT_SOURCE_DIR}/IOSSupport.m
   ${CMAKE_CURRENT_SOURCE_DIR}/IOSGame.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/IOSBot.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/IOSTouchCore.c
   ${CMAKE_CURRENT_SOURCE_DIR}/IOSTouch.m
   ${CMAKE_CURRENT_SOURCE_DIR}/IOSPhotos.m
@@ -31,9 +30,9 @@ set_source_files_properties(${POSTAL_SRCS} PROPERTIES COMPILE_OPTIONS "-w")
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSSupport.m ${CMAKE_CURRENT_SOURCE_DIR}/IOSTouch.m
   ${CMAKE_CURRENT_SOURCE_DIR}/IOSPhotos.m PROPERTIES COMPILE_OPTIONS "-fobjc-arc;-Wall;-Wextra;-Werror;-Wno-unused-parameter;-Wno-missing-field-initializers")
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSTouchCore.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror;-Wno-unused-parameter;-Wno-missing-field-initializers")
-# IOSGame/IOSBot include the game's 1997 headers, which warn by the dozen:
+# IOSGame includes the game's 1997 headers, which warn by the dozen:
 # warnings off here; their own lines are checked with -Wall in the Linux rig.
-set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSGame.cpp ${CMAKE_CURRENT_SOURCE_DIR}/IOSBot.cpp
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/IOSGame.cpp
   PROPERTIES COMPILE_OPTIONS "-w")
 
 target_compile_definitions(POSTAL PRIVATE

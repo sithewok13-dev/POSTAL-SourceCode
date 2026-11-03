@@ -12,7 +12,6 @@
 #include "score.h"
 #include "IOSGame.h"
 #include "IOSTouch.h"
-#include "IOSBot.h"
 #include "camera.h"
 #include "hood.h"
 #if PLATFORM_IOS
@@ -41,8 +40,6 @@ static bool				s_bFollow		= false;
 static U16				s_idFollow		= 0;	// CIdBank::IdNil
 static int32_t			s_lFollowDeadAt = 0;	// game time the followed one was first seen dead
 static int				s_iSlow			= 0;	// 0, 2, 4
-static int				s_iSlowSpeed	= 2;	// the speed slow motion uses (2 or 4)
-static bool				s_bAutoplay		= false;
 static bool				s_bKeyboard		= false;
 static unsigned		s_uLevel			= 0;	// bumped for each new realm
 static CRealm*			s_prealm			= NULL;	// valid only during the frame it was set
@@ -50,7 +47,6 @@ static CDude*			s_pdude			= NULL;
 static bool				s_bLevelsSent	= false;
 static CDude*			s_pdudeInvincibleSet = NULL;	// the dude the cheat made invincible
 static bool				s_bWasInvincible = false;		// ...and whether it already was (the game's own cheat)
-static bool				s_bInPlay		= false;		// inside Play(): levels, their intros and score screens
 
 // Levels the cheat's list and autoplay choose from (Play_InitLevelSelectMenu's)
 #define IOSGAME_MAX_LEVELS 40
@@ -117,9 +113,9 @@ static void SetCheat(bool bOn)
 	s_bCheat = bOn;
 	// One sound for on and off, from the tray or the icon alike (the owner picks it)
 	PlaySample(g_smidDemonLaugh1, SampleMaster::UserFeedBack);
-	if (!bOn && !s_bAutoplay)
+	if (!bOn)
 		EndInvincible();					// keeps the weapons, as JK's sithewok
-	if (!bOn && !s_bAutoplay)
+	if (!bOn)
 		s_bFollow = false;					// FOLLOW is a cheat's tool: it goes with it
 	IOSTouch_ShowMessage(bOn ? "Cheat on: can't die, every weapon, endless ammo" : "Cheat off", 2.5);
 	}
@@ -327,11 +323,8 @@ bool IOSGame_CameraTarget(CRealm* prealm, double* pdX, double* pdY, double* pdZ)
 ////////////////////////////////////////////////////////////////////////////////
 // Camera: photos, bursts, the zoom-out photo, freeze and pan
 ////////////////////////////////////////////////////////////////////////////////
-enum { PHOTO_NONE = 0, PHOTO_ONE, PHOTO_BURST };
+enum { PHOTO_NONE = 0, PHOTO_ONE };
 static int		s_iPhoto		= PHOTO_NONE;	// a grab wanted on the next frame shown
-static int		s_iBurstShot	= 0;			// the shot number in the current burst
-static unsigned	s_uLastBurstAt	= 0;			// the frame shown of the last burst request
-static bool		s_bZoomOut		= false;		// a zoom-out photo wanted on the next frame shown
 static CCamera*	s_pcamera		= NULL;		// the play camera, valid while s_prealm is
 static bool		s_bFreeze		= false;		// freeze and pan is open
 static double	s_dPanX = 0, s_dPanY = 0;		// its drag so far, in game pixels
@@ -373,80 +366,18 @@ static void SavePhoto(const uint32_t* pul, int w, int h, int iRowFrom, int iRows
 	free(pub);
 	}
 
-static void ZoomOutPhoto(CRealm* prealm, CCamera* pcam);
-
 void IOSGame_FrameShown(const uint32_t* pul, int w, int h)
 	{
-	// The zoom-out photo is drawn after the frame's own snap (a snap uses up
-	// the frame's short-lived sprites, such as tracers)
-	if (s_bZoomOut && s_prealm && s_pcamera)
-		ZoomOutPhoto(s_prealm, s_pcamera);
-	s_bZoomOut = false;
 	if (s_iPhoto == PHOTO_NONE || !pul || w <= 0 || h <= 0)
 		return;
 	// Full-screen play: the whole frame is the game's picture (no strips to crop)
 	int iTop = 0, iRows = h;
-	if (s_iPhoto == PHOTO_BURST)
-		{
-		char szKind[32];
-		snprintf(szKind, sizeof(szKind), "burst %02d", s_iBurstShot);
 #if PLATFORM_IOS
-		SavePhoto(pul, w, h, iTop, iRows, szKind, s_iBurstShot > 1 ? IOSPHOTOS_LIGHT : 0);
+	SavePhoto(pul, w, h, iTop, iRows, "screenshot", IOSPHOTOS_ADD_INFO);	// what's on screen, without the buttons
 #else
-		SavePhoto(pul, w, h, iTop, iRows, szKind, 0);
+	SavePhoto(pul, w, h, iTop, iRows, "screenshot", 0);
 #endif
-		}
-	else
-		{
-		int iKinds = IOSTouch_PhotoKinds();
-		if (iKinds & IOSTOUCH_PHOTO_CLEAN)
-			SavePhoto(pul, w, h, iTop, iRows, "clean", 0);
-		// The info text is the overlay's now: "hud" draws it on, as "hud+buttons" draws the buttons
-#if PLATFORM_IOS
-		if (iKinds & IOSTOUCH_PHOTO_HUD)
-			SavePhoto(pul, w, h, 0, h, "hud", IOSPHOTOS_ADD_OVERLAY);
-#else
-		if (iKinds & IOSTOUCH_PHOTO_HUD)
-			SavePhoto(pul, w, h, 0, h, "hud", 0);
-#endif
-#if PLATFORM_IOS
-		if (iKinds & IOSTOUCH_PHOTO_HUDBTNS)
-			SavePhoto(pul, w, h, 0, h, "hud+buttons", IOSPHOTOS_ADD_OVERLAY);
-#endif
-		}
 	s_iPhoto = PHOTO_NONE;
-	}
-
-// The zoom-out photo: the scene drawn at twice the view's size around the
-// camera's centre, then shrunk to the view's size (2x2 pixels averaged)
-static void ZoomOutPhoto(CRealm* prealm, CCamera* pcam)
-	{
-	int16_t w = pcam->m_sViewW, h = pcam->m_sViewH;
-	if (w <= 0 || h <= 0)
-		return;
-	RImage im;
-	if (im.CreateImage(w * 2, h * 2, RImage::BMP8) != 0)
-		return;
-	memset(im.m_pData, 0, (size_t)im.m_lPitch * im.m_sHeight);
-	int16_t sX = pcam->m_sSceneViewX - w / 2, sY = pcam->m_sSceneViewY - h / 2;
-	pcam->Snap(w * 2, h * 2, &prealm->m_scene, prealm->m_phood, sX, sY, &im, 0, 0);
-	uint32_t* pul = (uint32_t*)malloc((size_t)w * h * 4);
-	if (!pul)
-		return;
-	for (int y = 0; y < h; y++)
-		for (int x = 0; x < w; x++)
-			{
-			unsigned r = 0, g = 0, b = 0;
-			for (int k = 0; k < 4; k++)
-				{
-				uint8_t idx = im.m_pData[(size_t)(y * 2 + (k >> 1)) * im.m_lPitch + x * 2 + (k & 1)];
-				uint32_t c = IOS_PaletteARGB(idx);
-				r += (c >> 16) & 255; g += (c >> 8) & 255; b += c & 255;
-				}
-			pul[(size_t)y * w + x] = 0xFF000000u | ((r / 4) << 16) | ((g / 4) << 8) | (b / 4);
-			}
-	SavePhoto(pul, w, h, 0, h, "zoom-out", 0);
-	free(pul);
 	}
 
 void IOSGame_Pan2D(int16_t* psX, int16_t* psY)
@@ -474,8 +405,6 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 		s_idFollow = CIdBank::IdNil;
 		s_phoodIcons = NULL;
 		s_pdudeInvincibleSet = NULL;
-		if (s_bAutoplay)
-			IOSBot_NewLevel(prealm);
 		}
 	s_prealmSeen = prealm;
 	s_phoodSeen = prealm->m_phood;
@@ -484,7 +413,7 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 	s_prealm = prealm;
 	s_pdude = pdude;
 	s_uLastPlay = s_uPresents;
-	if (pdude && (s_bCheat || s_bAutoplay))
+	if (pdude && s_bCheat)
 		ApplyCheat(pdude);
 	SendIcons(prealm);
 	SendWeapons(pdude);
@@ -506,8 +435,6 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 			}
 		}
 #endif
-	if (s_bAutoplay && pdude)
-		IOSBot_Think(prealm, pdude);
 	}
 
 // Full-screen play: the strip's text and the weapon bar's numbers, for the overlay
@@ -561,7 +488,7 @@ void IOSGame_Present(void* pSDLWindow)
 		s_prealm = NULL;
 		s_pdude = NULL;
 		}
-	int iMode = !bPlaying ? IOSTOUCH_HIDDEN : (s_bAutoplay ? IOSTOUCH_AUTOPLAY : IOSTOUCH_GAMEPLAY);
+	int iMode = !bPlaying ? IOSTOUCH_HIDDEN : IOSTOUCH_GAMEPLAY;
 
 	if (!s_bLevelsSent && bPlaying)
 		{
@@ -594,20 +521,6 @@ void IOSGame_Present(void* pSDLWindow)
 		req = 0;
 		s_bFreeze = false;
 		(void)IOSTouch_TakeLevelPick();
-		// Autoplay: tap through the level's intro and score screens
-		static unsigned s_uLastTap = 0;
-		if (s_bAutoplay && s_bInPlay && s_uPresents - s_uLastTap > 90)
-			{
-			s_uLastTap = s_uPresents;
-			SDL_Event ev;
-			memset(&ev, 0, sizeof(ev));
-			ev.type = SDL_KEYDOWN;
-			ev.key.keysym.sym = SDLK_SPACE;
-			ev.key.keysym.scancode = SDL_SCANCODE_SPACE;
-			SDL_PushEvent(&ev);
-			ev.type = SDL_KEYUP;
-			SDL_PushEvent(&ev);
-			}
 		return;
 		}
 
@@ -641,23 +554,6 @@ void IOSGame_Present(void* pSDLWindow)
 		s_sNextRealm = (int16_t)iPick;
 		s_uPlayReq |= IOSGAME_PLAY_ABORT;
 		}
-	if ((req & (IOSTOUCH_REQ_AUTOPLAY | IOSTOUCH_REQ_AUTONEXT)) && s_ctLevels > 0)
-		{
-		if (!s_bAutoplay)
-			IOSTouch_ShowMessage("Autoplay: double tap for another level, hold to stop", 3.0);
-		s_bAutoplay = true;
-		IOSGame_AutoNext();
-		}
-	if (req & IOSTOUCH_REQ_AUTOSTOP)
-		{
-		s_bAutoplay = false;
-		s_bFollow = false;
-		s_iSlow = 0;
-		s_iNext = IOSGAME_NEXT_NONE;
-		s_uPlayReq |= IOSGAME_PLAY_ABORT;
-		if (!s_bCheat)
-			EndInvincible();
-		}
 	if (req & IOSTOUCH_REQ_KEYBOARD)
 		{
 		s_bKeyboard = !s_bKeyboard;
@@ -668,7 +564,7 @@ void IOSGame_Present(void* pSDLWindow)
 		}
 	if (req & IOSTOUCH_REQ_FOLLOW)
 		{
-		s_bFollow = !s_bFollow && (s_bCheat || s_bAutoplay);
+		s_bFollow = !s_bFollow && s_bCheat;
 		s_idFollow = CIdBank::IdNil;
 		}
 	if ((req & IOSTOUCH_REQ_FOLLOWNEXT) && s_bFollow && s_prealm)
@@ -676,14 +572,6 @@ void IOSGame_Present(void* pSDLWindow)
 	// Camera
 	if (req & IOSTOUCH_REQ_PHOTO)
 		s_iPhoto = PHOTO_ONE;
-	if (req & IOSTOUCH_REQ_BURST)
-		{
-		s_iBurstShot = (s_uPresents - s_uLastBurstAt > 30) ? 1 : s_iBurstShot + 1;
-		s_uLastBurstAt = s_uPresents;
-		s_iPhoto = PHOTO_BURST;
-		}
-	if (req & IOSTOUCH_REQ_ZOOMOUT)
-		s_bZoomOut = true;
 	if (req & IOSTOUCH_REQ_FREEZE)
 		{
 		s_bFreeze = true;
@@ -698,30 +586,9 @@ void IOSGame_Present(void* pSDLWindow)
 		s_dPanX += s_in.fPanX * dScale;
 		s_dPanY += s_in.fPanY * dScale;	// UIKit points: y grows down, as the scene's does
 		}
+	// Tray SLOW: off -> 1/2 -> 1/4 -> off
 	if (req & IOSTOUCH_REQ_SLOWMO)
-		s_iSlow = s_iSlow ? 0 : s_iSlowSpeed;
-	if ((req & IOSTOUCH_REQ_SLOWSPEED) && s_iSlow)
-		s_iSlow = s_iSlowSpeed = (s_iSlowSpeed == 2 ? 4 : 2);
-	}
-
-// A random level, never the one just played
-static int16_t s_sLastRealm = -1;
-static int16_t RandomLevel(void)
-	{
-	int16_t s = (int16_t)(rand() % s_ctLevels);
-	if (s == s_sLastRealm && s_ctLevels > 1)
-		s = (int16_t)((s + 1 + rand() % (s_ctLevels - 1)) % s_ctLevels);
-	s_sLastRealm = s;
-	return s;
-	}
-
-void IOSGame_AutoNext(void)
-	{
-	if (s_ctLevels <= 0)
-		return;
-	s_iNext = IOSGAME_NEXT_LEVEL;
-	s_sNextRealm = RandomLevel();
-	s_uPlayReq |= IOSGAME_PLAY_ABORT;
+		s_iSlow = (s_iSlow == 0) ? 2 : (s_iSlow == 2 ? 4 : 0);
 	}
 
 unsigned IOSGame_TakePlayRequests(void)
@@ -733,11 +600,6 @@ unsigned IOSGame_TakePlayRequests(void)
 
 int IOSGame_TakeNext(int16_t* psRealm)
 	{
-	if (s_iNext == IOSGAME_NEXT_NONE && s_bAutoplay && s_ctLevels > 0)
-		{
-		s_iNext = IOSGAME_NEXT_LEVEL;		// a level ended in autoplay: another random one
-		s_sNextRealm = RandomLevel();
-		}
 	int i = s_iNext;
 	s_iNext = IOSGAME_NEXT_NONE;
 	if (psRealm)
@@ -750,8 +612,6 @@ int IOSGame_TakeNext(int16_t* psRealm)
 ////////////////////////////////////////////////////////////////////////////////
 U32 IOSGame_Input(U32 input)
 	{
-	if (s_bAutoplay)
-		return IOSBot_Input(input);
 	if (s_bFollow)
 		return input & ~(INPUT_FIRE | INPUT_EXECUTE | INPUT_DUCK);	// the dude waits while the camera is away
 	if ((s_in.ulButtons & IOSTOUCH_FIRE) && s_pdude && s_pdude->IsDead())
@@ -790,8 +650,6 @@ static double ScreenAngle(float x, float y)
 bool IOSGame_Move(double* pdVel, double* pdAngle)
 	{
 	float x = s_in.fMoveX, y = s_in.fMoveY;
-	if (s_bAutoplay)
-		return IOSBot_Move(pdVel, pdAngle);
 	if (s_bFollow)
 		return false;
 	double v = sqrt((double)x * x + (double)y * y);
@@ -804,8 +662,6 @@ bool IOSGame_Move(double* pdVel, double* pdAngle)
 
 bool IOSGame_Aim(double* pdAngle)
 	{
-	if (s_bAutoplay)
-		return IOSBot_Aim(pdAngle);
 	if (!s_in.bAim || s_bFollow)
 		return false;
 	*pdAngle = ScreenAngle(s_in.fAimX, s_in.fAimY);
@@ -824,12 +680,3 @@ const char* IOSGame_QuickSaveFile(void)
 	return "savegame/quick.gme";
 	}
 
-void IOSGame_InPlay(bool bIn)
-	{
-	s_bInPlay = bIn;
-	}
-
-bool IOSGame_Autoplay(void)
-	{
-	return s_bAutoplay;
-	}

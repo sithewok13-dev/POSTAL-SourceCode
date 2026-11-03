@@ -59,13 +59,5 @@ double IOSGame_TimeScale(void);
 // The quick save slot's file (rspix path)
 const char* IOSGame_QuickSaveFile(void);
 
-// Autoplay: leave this level for another random one
-void IOSGame_AutoNext(void);
-
-// Play() (play.cpp) is running: levels, their intros and score screens (not the main menu)
-void IOSGame_InPlay(bool bIn);
-
-// Autoplay is running (the bot drives the dude)
-bool IOSGame_Autoplay(void);
 
 #endif

@@ -1504,8 +1504,7 @@ int16_t ScoreHighestKills(CRealm* pRealm)
 //////////////////////////////////////////////////////////////////////////////
 // Added: iOS: the status strip's two lines as plain text, for the touch
 // overlay to draw over a full-screen view (single-player modes; the same
-// formats and values ScoreUpdateDisplay prints). The goal line is empty once
-// it would have gone from the strip (STATUS_DISPLAY_TIMEOUT).
+// formats and values ScoreUpdateDisplay prints). The goal line stays up.
 //////////////////////////////////////////////////////////////////////////////
 void ScoreGetStatusText(CRealm* pRealm, char* pszLine1, int iLen1, char* pszLine2, int iLen2)
 {
@@ -1545,7 +1544,7 @@ void ScoreGetStatusText(CRealm* pRealm, char* pszLine1, int iLen1, char* pszLine
 		default:
 			break;
 	}
-	if (pRealm->m_time.GetGameTime() < g_scoreboard.m_lLastStatusDrawTime + STATUS_DISPLAY_TIMEOUT)
+	// (the strip showed the goal only for its first seconds; the overlay keeps it up)
 	{
 		const char* pszGoal = g_apszScoreGoalText[pRealm->m_ScoringMode];
 		switch (pRealm->m_ScoringMode)
