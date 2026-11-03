@@ -833,6 +833,9 @@ class CDude : public CCharacter
 		// Get the current weapon the dude has ready to use.
 		WeaponType GetCurrentWeapon(void);
 
+		// Added: iOS: the touch controls' cheat sets this (ios/IOSGame.cpp)
+		void IOS_SetInvincible(bool bOn)	{ m_bInvincible = bOn; }
+
 		
 	//---------------------------------------------------------------------------
 	// Internal functions

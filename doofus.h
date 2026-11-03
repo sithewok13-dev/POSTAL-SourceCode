@@ -207,6 +207,9 @@ class CDoofus : public CCharacter
 	// Types, enums, etc.
 	//---------------------------------------------------------------------------
 	public:
+		// Added: iOS: autoplay's player tells hostiles from bystanders (ios/IOSBot.cpp)
+		bool IOS_IsCivilian(void)	{ return m_bCivilian; }
+
 			typedef enum						// Suggested logic actions basec on 
 			{										// evaluation of situation
 				Action_Guard,					// Stay in place and check for proximity to Dude

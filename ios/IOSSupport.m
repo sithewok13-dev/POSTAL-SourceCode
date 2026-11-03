@@ -72,3 +72,10 @@ double IOSSupport_ScreenAspect(void)
     double w = MAX(s.width, s.height), h = MIN(s.width, s.height);
     return h > 0 ? w / h : 4.0 / 3.0;
 }
+
+double IOSSupport_ScreenHeightPoints(void)
+{
+    CGSize s = UIScreen.mainScreen.bounds.size;
+    double h = MIN(s.width, s.height);
+    return h > 0 ? h : 390.0;
+}

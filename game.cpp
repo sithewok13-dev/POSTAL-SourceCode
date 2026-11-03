@@ -565,6 +565,9 @@
 #include "main.h"
 #include "menus.h"
 #include "game.h"
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+#include "IOSGame.h"  // Added: iOS
+#endif
 #include "localize.h"
 #include "play.h"
 #include "title.h"
@@ -1498,6 +1501,32 @@ static int16_t GameCore(void)		// Returns 0 on success.
 
 		// Reset next action.
 		actionNext	= ACTION_NOTHING;
+
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+		// Added: iOS: what the touch controls asked for when they left a level
+		if (m_action == ACTION_NOTHING)
+			{
+			int16_t sIOSRealm = 0;
+			switch (IOSGame_TakeNext(&sIOSRealm))
+				{
+				case IOSGAME_NEXT_QUICKLOAD:
+					if (Game_LoadPlayersGame((char*)IOSGame_QuickSaveFile(), &ms_sLoadedDifficulty, &m_action) == SUCCESS)
+						m_bJustOneRealm = false;
+					else
+						{
+						m_action = ACTION_NOTHING;
+						rspMsgBox(RSP_MB_ICN_INFO | RSP_MB_BUT_OK, g_pszAppName, "No quick save yet: hold SAVE during a level to make one.");
+						}
+					break;
+				case IOSGAME_NEXT_LOADSCREEN:
+					m_action = ACTION_LOAD_GAME;
+					break;
+				case IOSGAME_NEXT_LEVEL:
+					Game_StartLevelOnce(sIOSRealm);
+					break;
+				}
+			}
+#endif
 
 		// Any action to handle?
 		if (m_action != ACTION_NOTHING)

@@ -351,6 +351,10 @@
 #include "NetDlg.h"
 #include "cutscene.h"
 #include "play.h"
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+#include "IOSGame.h"  // Added: iOS
+#include "IOSTouch.h"
+#endif
 #include "warp.h"
 #include "scene.h"
 #include "score.h"
@@ -554,6 +558,9 @@ typedef enum
 
 // Quit flag used by menu callbacks
 static MenuAction ms_menuaction	= MenuActionNone;
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+static MenuAction ms_iosmenuaction	= MenuActionNone;	// Added: iOS
+#endif
 
 // Number used in filename for snapshots
 static int32_t ms_lCurPicture = 0;
@@ -2762,6 +2769,38 @@ class CPlayInput : public CPlay
 				CDude* pdudeLocal = pinfo->LocalDudePointer();
 				CRealm* prealm = pinfo->Realm();
 
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+				// Added: iOS: what the touch buttons asked for
+				if (!pinfo->IsMP())
+					{
+					unsigned uIOS = IOSGame_TakePlayRequests();
+					if (uIOS & IOSGAME_PLAY_QUICKSAVE)
+						{
+						if (Game_SavePlayersGame((char*)IOSGame_QuickSaveFile(), prealm->m_flags.sDifficulty) == SUCCESS)
+							IOSTouch_ShowMessage("Quick saved", 1.5);
+						else
+							IOSTouch_ShowMessage("Quick save failed", 2.5);
+						}
+					if (uIOS & IOSGAME_PLAY_ASKABORT)
+						{
+						if (rspMsgBox(RSP_MB_ICN_QUERY | RSP_MB_BUT_YESNO, g_pszAppName,
+							"Quit this level and open the load screen?") == RSP_MB_RET_YES)
+							uIOS |= IOSGAME_PLAY_ABORT;
+						else
+							IOSGame_TakeNext(NULL);	// stay: forget the load screen
+						}
+					if (uIOS & IOSGAME_PLAY_ABORT)
+						pinfo->SetGameState_GameAborted();
+					else if (uIOS & IOSGAME_PLAY_SAVESCREEN)
+						{
+						StartMenu(pinfo);
+						ms_iosmenuaction = MenuActionSaveGame;	// as if SAVE were chosen in it
+						}
+					else if (uIOS & IOSGAME_PLAY_MENU)
+						StartMenu(pinfo);
+					}
+#endif
+
 				//==============================================================================
 				// A system-specific quit ends the game (MP mode is handled elsewhere)
 				//==============================================================================
@@ -3118,6 +3157,9 @@ class CPlayInput : public CPlay
 							pinfo->SetGameState_NextRealm();
 
 #ifndef DISABLE_SP_CHALLENGE_SCORES
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+							if (!IOSGame_Autoplay())	// Added: iOS: autoplay goes straight on
+#endif
 							// Display high scores
 							ScoreDisplayHighScores(prealm);
 #endif
@@ -3460,6 +3502,14 @@ class CPlayInput : public CPlay
 			ms_menuaction = MenuActionNone;
 
 			DoMenuInput(pie, g_InputSettings.m_sUseJoy);
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+			// Added: iOS: SAVE tapped opens the menu straight onto saving
+			if (ms_iosmenuaction != MenuActionNone)
+				{
+				ms_menuaction = ms_iosmenuaction;
+				ms_iosmenuaction = MenuActionNone;
+				}
+#endif
 
 			switch (ms_menuaction)
 				{
@@ -3910,6 +3960,9 @@ class CPlayRealm : public CPlay
 
 					// Get realm pointer
 					CRealm* prealm = pinfo->Realm();
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+					bool bIOSHold = false;	// Added: iOS
+#endif
 
 					// Adjust realm time.  How we do it depends on the mode we're in.
 					if (GetInputMode() == INPUT_MODE_LIVE)
@@ -3922,7 +3975,30 @@ class CPlayRealm : public CPlay
 						else
 							{
 							// In non-network mode, time flows freely
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+							// Added: iOS: slow motion runs the clock at 1/2 or 1/4; the weapon
+							// wheel and the level list hold it still (0)
+							static int32_t s_lIOSLastReal = 0;
+							bIOSHold = IOSGame_TimeScale() <= 0.0;
+							if (IOSGame_TimeScale() >= 1.0)
+								prealm->m_time.Update();
+							else
+								{
+								static double s_dIOSCarry = 0;
+								int32_t lIOSNow = rspGetMilliseconds();
+								int32_t lIOSElapsed = lIOSNow - s_lIOSLastReal;
+								if (lIOSElapsed < 0 || lIOSElapsed > 100)
+									lIOSElapsed = 33;
+								s_dIOSCarry += lIOSElapsed * IOSGame_TimeScale();
+								int32_t lIOSStep = (int32_t)s_dIOSCarry;
+								s_dIOSCarry -= lIOSStep;
+								if (lIOSStep > 0)
+									prealm->m_time.Update(lIOSStep);
+								}
+							s_lIOSLastReal = rspGetMilliseconds();
+#else
 							prealm->m_time.Update();
+#endif
 							}
 						}
 					else
@@ -3933,6 +4009,9 @@ class CPlayRealm : public CPlay
 					
 
 					// Update Realm
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+					if (!bIOSHold)	// Added: iOS: nothing moves while the wheel is open
+#endif
 					prealm->Update();
 
 					// Prepare Realm for rendering (Snap()).
@@ -3961,11 +4040,28 @@ class CPlayRealm : public CPlay
 
 					// Track the local dude with the grip/camera and adjust the sound, too
 					CDude* pdudeLocal = pinfo->LocalDudePointer();
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+					// Added: iOS: the touch controls' frame, and the follow cam's target
+					IOSGame_PlayFrame(prealm, pdudeLocal, pinfo->Camera());
+					double dIOSX, dIOSY, dIOSZ;
+					if (IOSGame_CameraTarget(prealm, &dIOSX, &dIOSY, &dIOSZ))
+						{
+						int16_t	sX, sY;
+						prealm->Map3Dto2D(dIOSX, dIOSY, dIOSZ, &sX, &sY);
+						IOSGame_Pan2D(&sX, &sY);
+						pinfo->Grip()->TrackTarget(sX, sY, 30);
+						SetSoundLocation(dIOSX, dIOSY, dIOSZ);
+						}
+					else
+#endif
 					if (pdudeLocal != NULL)
 						{
 						// Update grip/camera
 						int16_t	sX, sY;
 						prealm->Map3Dto2D(pdudeLocal->GetX(), pdudeLocal->GetY(), pdudeLocal->GetZ(), &sX, &sY);
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+						IOSGame_Pan2D(&sX, &sY);	// Added: iOS: freeze and pan
+#endif
 						pinfo->Grip()->TrackTarget(sX, sY, 30);
 
 						// Set coordinates for the "ear"

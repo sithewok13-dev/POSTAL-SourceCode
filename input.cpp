@@ -188,6 +188,9 @@
 
 #include "RSPiX.h"
 #include "input.h"
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+#include "IOSGame.h"  // Added: iOS
+#endif
 #include "CompileOptions.h"
 
 #ifdef MOBILE
@@ -1298,6 +1301,10 @@ extern UINPUT GetLocalInput(				// Returns local input.
 
 #ifdef MOBILE
 		input = AndroidGetInput();
+#endif
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+		// Added: iOS: the touch buttons (and autoplay's player)
+		input = IOSGame_Input(input);
 #endif
 
 		// Store time for next call.

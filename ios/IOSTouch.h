@@ -1,0 +1,124 @@
+/* POSTAL for iOS: on-screen touch controls (a UIKit overlay over SDL's view).
+   Layout and behaviour: jk-files wip-postal-ios PLAN.md and docs/HOUSE_STYLE.md
+   section 3 (ported from Serious Sam's ios/IOSTouch.m).
+
+   The overlay (IOSTouch.m) only turns touches into the plain values below.
+   The game side (IOSGame.cpp) reads them and acts on POSTAL: the dude's
+   movement and facing, its input bits, the menus, saving and loading, the
+   cheat, the camera and autoplay.
+
+   Threads: everything here runs on the main thread (POSTAL is single
+   threaded: its game loop runs on the main thread, between SDL event pumps). */
+#ifndef IOS_TOUCH_H
+#define IOS_TOUCH_H
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* What the game is doing, which decides what the overlay shows */
+enum {
+  IOSTOUCH_HIDDEN = 0, /* menus, cutscenes, loading: no overlay, touches are SDL mouse clicks */
+  IOSTOUCH_GAMEPLAY,   /* a level is being played */
+  IOSTOUCH_AUTOPLAY,   /* autoplay: no buttons; a double tap = new level, a long press = stop */
+};
+
+/* What the HUD and game state are, for the overlay's layout and context buttons.
+   Rectangles are x0, y0, x1, y1 as fractions of the screen. */
+typedef struct IOSTouchHud {
+  float afTopBar[4];     /* the game's top status strip (where the pills go) */
+  float afTopText[4];    /* the part of the strip the status text covers now */
+  float afTopGap[4];     /* the free gap inside the status text (between "Population N" and "Hostiles")
+                            where NEXT/PREV WPN go if it is at least 2*38+6 pt wide; empty (x1 <= x0): none */
+  int   bCheatOn;        /* the cheat is on (invincible, weapons topped up) */
+  int   bFollowing;      /* the follow cam is following someone else */
+  int   iSlowMo;         /* 0 normal, 2 half speed, 4 quarter speed */
+  unsigned int uLevel;   /* changes with every level started or loaded */
+} IOSTouchHud;
+
+/* What the player asked for (IOSTouch_Update's result), done by the game side */
+enum {
+  IOSTOUCH_REQ_MENU        = 1 << 0,  /* MENU tap: the game menu (Escape) */
+  IOSTOUCH_REQ_SAVESCREEN  = 1 << 1,  /* SAVE tap: the game's save screen */
+  IOSTOUCH_REQ_LOADSCREEN  = 1 << 2,  /* LOAD tap: "quit this level?", then the load screen */
+  IOSTOUCH_REQ_QUICKSAVE   = 1 << 3,  /* SAVE held 0.3 s */
+  IOSTOUCH_REQ_QUICKLOAD   = 1 << 4,  /* LOAD held 0.3 s */
+  IOSTOUCH_REQ_CHEAT       = 1 << 5,  /* toggle the cheat (tray or the cheat icon); the game plays the sound */
+  IOSTOUCH_REQ_LEVEL       = 1 << 6,  /* tray LEVEL (cheat on): the level select with every level open */
+  IOSTOUCH_REQ_AUTOPLAY    = 1 << 7,  /* tray AUTOPLAY: start autoplay */
+  IOSTOUCH_REQ_AUTONEXT    = 1 << 8,  /* autoplay: double tap, another random level */
+  IOSTOUCH_REQ_AUTOSTOP    = 1 << 9,  /* autoplay: long press, back to the menu */
+  IOSTOUCH_REQ_KEYBOARD    = 1 << 10, /* tray keyboard: type one of POSTAL's cheat words */
+  IOSTOUCH_REQ_FOLLOW      = 1 << 11, /* tray FOLLOW: follow cam on/off */
+  IOSTOUCH_REQ_FOLLOWNEXT  = 1 << 12, /* the arrow by the camera icon: follow the next person */
+  IOSTOUCH_REQ_SLOWMO      = 1 << 13, /* camera slid up: slow motion on/off */
+  IOSTOUCH_REQ_SLOWSPEED   = 1 << 14, /* the slow-motion label tapped: 1/2 <-> 1/4 */
+  IOSTOUCH_REQ_PHOTO       = 1 << 15, /* camera tap: a photo (IOSCapture) */
+  IOSTOUCH_REQ_BURST       = 1 << 16, /* camera slid sideways: one burst photo now; asked again every
+                                         0.2 s while the finger stays down, 10 at most (game: like PHOTO,
+                                         clean only, named "burst NN") */
+  IOSTOUCH_REQ_FREEZE      = 1 << 17, /* camera held: freeze and pan (IOSTouchInput.fPanX/Y; a camera tap
+                                         asks PHOTO; the game holds still: IOSTouch_HoldsGame) */
+  IOSTOUCH_REQ_ZOOMOUT     = 1 << 18, /* camera slid down: a zoomed-out photo */
+  IOSTOUCH_REQ_UNFREEZE    = 1 << 19, /* freeze ended (its X, or any mode change): back to the game */
+};
+/* IOSTOUCH_REQ_LEVEL is informational: the overlay has opened its own level
+   list (IOSTouch_SetLevels); the pick comes from IOSTouch_TakeLevelPick. */
+
+/* Buttons held this frame (IOSTouchInput.ulButtons) */
+enum {
+  IOSTOUCH_FIRE       = 1 << 0,
+  IOSTOUCH_DUCK       = 1 << 1,
+  IOSTOUCH_EXECUTE    = 1 << 2,
+  IOSTOUCH_NEXTWEAPON = 1 << 3, /* one frame per quick tap */
+  IOSTOUCH_PREVWEAPON = 1 << 4,
+  IOSTOUCH_RUN        = 1 << 5, /* the stick pushed to its edge */
+};
+
+typedef struct IOSTouchInput {
+  float fMoveX, fMoveY;   /* move stick, -1..1 in screen terms: right +, up + (0,0: not moving) */
+  int   bAim;             /* the right thumb is aiming (drag area or FIRE) */
+  float fAimX, fAimY;     /* aim direction in screen terms (right +, up +), unit length when bAim */
+  unsigned int ulButtons; /* IOSTOUCH_* */
+  int   iSelectWeapon;    /* 0 none, else 1 + the weapon type the wheel picked (one frame) */
+  float fPanX, fPanY;     /* freeze and pan: view drag since the last read, in screen points */
+  float fTurn;            /* tilt aiming while not aiming with a thumb: degrees to turn the dude since the
+                             last read, + = counter-clockwise on screen (while aiming, tilt turns fAimX/Y) */
+} IOSTouchInput;
+
+/* The weapon wheel: what the dude has (the game tells the overlay every frame) */
+#define IOSTOUCH_WPN_MAX 16
+typedef struct IOSTouchWeapons {
+  int bValid;              /* a dude exists and can change weapon */
+  int ctWeapons;           /* slices, in the game's NEXT order */
+  int aiType[IOSTOUCH_WPN_MAX];      /* the game's weapon type for each slice */
+  const char *apszName[IOSTOUCH_WPN_MAX];
+  int abOwned[IOSTOUCH_WPN_MAX];
+  int aiAmmo[IOSTOUCH_WPN_MAX];      /* -1: no count (infinite) */
+  int iCurrent;            /* slice of the weapon in hand, -1 none */
+} IOSTouchWeapons;
+
+/* Main thread, once per frame drawn. pSDLWindow: the SDL_Window *. Returns IOSTOUCH_REQ_* */
+unsigned int IOSTouch_Update(void *pSDLWindow, int iMode, const IOSTouchHud *pHud, unsigned int ulFramesDrawn);
+void IOSTouch_ReadInput(IOSTouchInput *pInput);
+void IOSTouch_SetWeapons(const IOSTouchWeapons *pWeapons);
+void IOSTouch_SetWeaponIcon(int iSlice, const unsigned char *pubRGBA, int iWidth, int iHeight);
+int  IOSTouch_HoldsGame(void);          /* the wheel, freeze or the level list is open: the game should hold still */
+void IOSTouch_ShowMessage(const char *pszText, double fSeconds);
+
+/* The level list (tray LEVEL, cheat on): the game calls SetLevels once (names copied, in order);
+   TakeLevelPick: -1 none, else the index tapped (returned once). The game holds still while it is open. */
+void IOSTouch_SetLevels(const char *const *ppszNames, int ctLevels);
+int  IOSTouch_TakeLevelPick(void);
+
+/* What a PHOTO request should save (the tray CAMERA's PHOTO options, held): IOSTOUCH_PHOTO_* bits, never 0.
+   BURST, ZOOMOUT and freeze photos are clean only. HUDBTNS: hand IOSPhotos the HUD frame with
+   IOSPHOTOS_ADD_OVERLAY and it draws the buttons on. */
+#define IOSTOUCH_PHOTO_CLEAN   1
+#define IOSTOUCH_PHOTO_HUD     2
+#define IOSTOUCH_PHOTO_HUDBTNS 4
+int  IOSTouch_PhotoKinds(void);
+
+#ifdef __cplusplus
+}
+#endif
+#endif

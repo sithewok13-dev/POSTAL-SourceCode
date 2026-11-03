@@ -32,6 +32,9 @@
 #include "ORANGE/CDT/slist.h"
 
 #include <ctype.h>
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+#include "IOSGame.h"  // Added: iOS
+#endif
 
 extern SDL_Window *sdlWindow;
 static char *sdlAppName;
@@ -821,6 +824,14 @@ extern void rspCacheDirtyRect(
 {
 }
 
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+// Added: iOS: the palette, for the camera's zoom-out photo (ios/IOSGame.cpp)
+uint32_t IOS_PaletteARGB(int iIndex)
+{
+    return apeApp[iIndex & 255].argb;
+}
+#endif
+
 extern void rspPresentFrame(void)
 {
     if (!sdlWindow) return;
@@ -839,6 +850,11 @@ extern void rspPresentFrame(void)
     SDL_RenderClear(sdlRenderer);
     SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
     SDL_RenderPresent(sdlRenderer);  // off to the screen with you.
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+    // Added: iOS: photos of this frame, then the touch overlay (every frame shown, menus too)
+    IOSGame_FrameShown(TexturePointer, FramebufferWidth, FramebufferHeight);
+    IOSGame_Present(sdlWindow);
+#endif
 #ifdef POSTAL_RIG
     // Added: test rig only (never in app builds). Every 30 frames, write
     // the frame to $POSTAL_RIG_DIR/frame.ppm.
