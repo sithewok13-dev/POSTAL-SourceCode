@@ -269,7 +269,7 @@ void	DrawTri_ZColorFog(uint8_t* pDstOffset,int32_t lDstP,
 			xdel = x2.mod - x1.mod;
 			//if (hzdel) hzinc.val = (z3.val - z2.val) / hzdel;
 			//***************8 flipped the inc value:!
-			if (xdel) fzinc.val = int32_t(z2.mod - z1.mod) * RInitNum::OneOver[xdel];
+			if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = int32_t(z2.mod - z1.mod) * RInitNum::OneOver[xdel];
 			//if (hzdel) Mul(hzinc,z3.val - z2.val,CInitNum::OneOver[hzdel]);
 
 			// Assume 2 to 3:
@@ -308,7 +308,7 @@ void	DrawTri_ZColorFog(uint8_t* pDstOffset,int32_t lDstP,
 			fz.mod += sBaseZ; // This is for coloring but it effects true z as well!
 			xdel = x3.mod - x2.mod;
 			//if (hzdel) hzinc.val = (z3.val - z2.val) / hzdel;
-			if (xdel) fzinc.val = uint32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
+			if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = uint32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
 			//if (hzdel) Mul(hzinc,z3.val - z2.val,CInitNum::OneOver[hzdel]);
 			// Assume 2 to 3:
 			for (x = x2.mod; x<= x3.mod;x++)
@@ -351,7 +351,7 @@ void	DrawTri_ZColorFog(uint8_t* pDstOffset,int32_t lDstP,
 				fz.mod += sBaseZ;
 				xdel = x3.mod - x2.mod;
 				//if (hzdel) hzinc.val = (z3.val - z2.val) / hzdel;
-				if (xdel) fzinc.val = int32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
+				if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = int32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
 				//if (hzdel) Mul(hzinc,z3.val - z2.val,CInitNum::OneOver[hzdel]);
 
 				// Assume 2 to 3:
@@ -392,7 +392,7 @@ void	DrawTri_ZColorFog(uint8_t* pDstOffset,int32_t lDstP,
 
 			xdel = x2.mod - x3.mod; //+ x to z
 			//if (hzdel) hzinc.val = (z2.val - z3.val) / hzdel;
-			if (xdel) fzinc.val = int32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
+			if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = int32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
 			//if (hzdel) Mul(hzinc,z2.val - z3.val,CInitNum::OneOver[hzdel]);
 
 			// Assume 2 to 3:
@@ -436,7 +436,7 @@ void	DrawTri_ZColorFog(uint8_t* pDstOffset,int32_t lDstP,
 				fz.mod += sBaseZ;
 				xdel = x2.mod - x3.mod;
 				//if (hzdel) hzinc.val = (z2.val - z3.val) / hzdel;
-				if (xdel) fzinc.val = uint32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
+				if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = uint32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
 				// Full accuracy fxMul!
 				//if (hzdel) Mul(hzinc,z2.val - z3.val,CInitNum::OneOver[hzdel]);
 				// Assume 2 to 3:
@@ -627,7 +627,7 @@ void	DrawTri_ZColor(uint8_t* pDstOffset,int32_t lDstP,
 			xdel = x2.mod - x1.mod;
 			//if (hzdel) hzinc.val = (z3.val - z2.val) / hzdel;
 			//***************8 flipped the inc value:!
-			if (xdel) fzinc.val = int32_t(z2.mod - z1.mod) * RInitNum::OneOver[xdel];
+			if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = int32_t(z2.mod - z1.mod) * RInitNum::OneOver[xdel];
 			//if (hzdel) Mul(hzinc,z3.val - z2.val,CInitNum::OneOver[hzdel]);
 
 			// Assume 2 to 3:
@@ -666,7 +666,7 @@ void	DrawTri_ZColor(uint8_t* pDstOffset,int32_t lDstP,
 			fz.mod += sBaseZ; // This is for coloring but it effects true z as well!
 			xdel = x3.mod - x2.mod;
 			//if (hzdel) hzinc.val = (z3.val - z2.val) / hzdel;
-			if (xdel) fzinc.val = uint32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
+			if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = uint32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
 			//if (hzdel) Mul(hzinc,z3.val - z2.val,CInitNum::OneOver[hzdel]);
 			// Assume 2 to 3:
 			for (x = x2.mod; x<= x3.mod;x++)
@@ -709,7 +709,7 @@ void	DrawTri_ZColor(uint8_t* pDstOffset,int32_t lDstP,
 				fz.mod += sBaseZ;
 				xdel = x3.mod - x2.mod;
 				//if (hzdel) hzinc.val = (z3.val - z2.val) / hzdel;
-				if (xdel) fzinc.val = int32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
+				if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = int32_t(z3.mod - z2.mod) * RInitNum::OneOver[xdel];
 				//if (hzdel) Mul(hzinc,z3.val - z2.val,CInitNum::OneOver[hzdel]);
 
 				// Assume 2 to 3:
@@ -750,7 +750,7 @@ void	DrawTri_ZColor(uint8_t* pDstOffset,int32_t lDstP,
 
 			xdel = x2.mod - x3.mod; //+ x to z
 			//if (hzdel) hzinc.val = (z2.val - z3.val) / hzdel;
-			if (xdel) fzinc.val = int32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
+			if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = int32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
 			//if (hzdel) Mul(hzinc,z2.val - z3.val,CInitNum::OneOver[hzdel]);
 
 			// Assume 2 to 3:
@@ -794,7 +794,7 @@ void	DrawTri_ZColor(uint8_t* pDstOffset,int32_t lDstP,
 				fz.mod += sBaseZ;
 				xdel = x2.mod - x3.mod;
 				//if (hzdel) hzinc.val = (z2.val - z3.val) / hzdel;
-				if (xdel) fzinc.val = uint32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
+				if (xdel > 0 && xdel < NUM_ONEOVER_FP32) /* Added: iOS: a negative width read before the table */ fzinc.val = uint32_t(z2.mod - z3.mod) * RInitNum::OneOver[xdel];
 				// Full accuracy fxMul!
 				//if (hzdel) Mul(hzinc,z2.val - z3.val,CInitNum::OneOver[hzdel]);
 				// Assume 2 to 3:

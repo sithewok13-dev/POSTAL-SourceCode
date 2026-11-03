@@ -186,6 +186,17 @@ RList<RMix>		RMix::ms_listActive;						// List of active channels.
 int16_t				RMix::ms_sSetMode	= FALSE;				// TRUE if we set Blue's 
 																	// sound output mode.
 
+
+// Added: iOS: the SDL audio callback (its own thread) removes finished
+// channels from ms_listActive while the game thread adds and removes them:
+// the game thread's changes to the list now hold the audio lock (SDL's lock
+// is recursive, and the callback already holds it)
+struct RMixListLock
+	{
+	RMixListLock()	{ rspLockSound(); }
+	~RMixListLock()	{ rspUnlockSound(); }
+	};
+
 RMix::State		RMix::ms_sState	= Idle;				// Current state for all
 																	// RMixes.
 int32_t				RMix::ms_lCurPos	= 0L;					// Current play position
@@ -658,6 +669,7 @@ int32_t RMix::Do(void)	// Returns value returned by rspDoSound() that
 							// indicates how much audio, in milliseconds,
 							// was required to be queued.
 	{
+	RMixListLock	lock;	// Added: iOS (see RMixListLock)
    ///////////////////////////////////////////////////////////////////////////
 	// Check for buffers that have completed playing:
    ///////////////////////////////////////////////////////////////////////////
@@ -798,7 +810,8 @@ int16_t RMix::CloseChannel(void)
 //////////////////////////////////////////////////////////////////////////////
 int16_t RMix::Start(RMixCall mcUser, uintptr_t ulUser,
 					uint8_t	ucVolume /* = 255 */, uint8_t ucVol2 /* = 255 */)
-	{						 
+	{
+	RMixListLock	lock;	// Added: iOS (see RMixListLock)						 
 	int16_t	sRes	= 0;	// Assume success.
 
 	ASSERT(m_sOpen == TRUE);
@@ -863,6 +876,7 @@ int16_t RMix::Start(RMixCall mcUser, uintptr_t ulUser,
 //////////////////////////////////////////////////////////////////////////////
 int16_t RMix::Suspend(void)
 	{
+	RMixListLock	lock;	// Added: iOS (see RMixListLock)
 	int16_t	sRes	= 0;	// Assume success.
 
 	if (m_sActive == TRUE)
@@ -921,6 +935,7 @@ int16_t RMix::IsChannelPaused(void)	// Returns TRUE, if sound output is paused; 
 //////////////////////////////////////////////////////////////////////////////
 int16_t RMix::Reset(void)
 	{
+	RMixListLock	lock;	// Added: iOS (see RMixListLock)
 	int16_t	sRes	= 0;	// Assume success.
 
 	// Attempt to reset sound output . . .
@@ -950,6 +965,7 @@ int16_t RMix::Reset(void)
 //////////////////////////////////////////////////////////////////////////////
 int16_t RMix::SuspendAll(void)	// Returns 0 on success.
 	{
+	RMixListLock	lock;	// Added: iOS (see RMixListLock)
 	int16_t	sRes	= 0;	// Assume success.
 
 	RMix*	pmix		= ms_listActive.GetHead();

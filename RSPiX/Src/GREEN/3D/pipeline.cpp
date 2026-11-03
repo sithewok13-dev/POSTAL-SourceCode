@@ -339,6 +339,9 @@ void RPipeLine::Render(RImage* pimDst,int16_t sDstX,int16_t sDstY,
 	int32_t lDstP = pimDst->m_lPitch;
 	uint8_t* pDst = pimDst->m_pData + (sDstX + sOffsetX) + lDstP * (sDstY + sOffsetY);
 
+	// Added: iOS: a few models have fewer colours than triangles; reuse the
+	// last colour instead of reading past the end of the colour list
+	uint8_t* pColorLast = pTexColors->m_pIndices + (pTexColors->m_sNum > 0 ? pTexColors->m_sNum - 1 : 0);
 	for (i=0;i < pMesh->m_sNum; i++,pColor++)
 		{
 		v1 = *psVertex++;
@@ -350,7 +353,7 @@ void RPipeLine::Render(RImage* pimDst,int16_t sDstX,int16_t sDstY,
 			// Render the sucker!
 			DrawTri_ZColorFog(pDst,lDstP,
 				ms_pPts+v1,ms_pPts+v2,ms_pPts+v3,pZB,
-				pAlpha->m_pAlphas[*pColor] + sFogOffset,
+				pAlpha->m_pAlphas[*(pColor <= pColorLast ? pColor : pColorLast)] + sFogOffset,
 				sOffsetX,		// In: 2D offset for pZB.
 				sOffsetY);	 	// In: 2D offset for pZB.
 			}
