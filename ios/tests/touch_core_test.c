@@ -35,12 +35,22 @@ static IOSTouchHud Hud(double gameW, int bGap)
 }
 
 static IOSTouchHud _hud;
+static int _bFull = 0; /* lay out for full-screen play (no status strip) */
 
 static void Screen(double W, double H, double inL, double inT, double inR, double inB, int bGap)
 {
   IOSTouchCore_Reset();
   IOSTouchCore_Settings()->bGyroAvailable = 1;
   _hud = Hud(480.0 * W / H, bGap);
+  if (_bFull) {
+    memset(_hud.afTopBar, 0, sizeof(_hud.afTopBar));
+    memset(_hud.afTopText, 0, sizeof(_hud.afTopText));
+    memset(_hud.afTopGap, 0, sizeof(_hud.afTopGap));
+    _hud.bFullScreen = 1;
+    snprintf(_hud.szStatus, sizeof(_hud.szStatus), "Population 38 Hostiles 30 Killed 0 (0%% / 87%%)");
+    _hud.iHealth = 100;
+    _hud.iAmmo = -1;
+  }
   IOSTouchCore_SetHud(&_hud);
   IOSTouchCore_Layout(W, H, inL, inT, inR, inB);
   IOSTouchCore_SetMode(IOSTOUCH_GAMEPLAY, _now);
@@ -143,6 +153,34 @@ static void CheckLayoutFits(const char *name, double W, double H, double inL, do
       }
     }
   }
+  /* every button is drawn as big as it is (a circle as wide as tall: the tray's were 0 wide, build 0.1.12) */
+  for (int b = 0; b < BTN_COUNT; b++) {
+    const IOSTouchButton *p = &K->aButtons[b];
+    if (p->r <= 0 || p->hw < p->r - 1e-9 || (!p->bPill && fabs(p->hw - p->r) > 1e-9)) {
+      printf("  %s: button %d drawn %.1f x %.1f\n", name, b, 2 * p->hw, 2 * p->r);
+      bad = 1;
+    }
+  }
+  /* full screen: the status text's band and row clear of every button (but the tray, on top) and on screen */
+  if (_bFull) {
+    IOSTouchRect rt, r2;
+    IOSTouchCore_StatusRects(&rt, &r2);
+    const IOSTouchRect *apr[2] = { &rt, &r2 };
+    for (int k = 0; k < 2; k++) {
+      const IOSTouchRect *r = apr[k];
+      if (!r->bValid) continue;
+      if (r->x0 < inL || r->x1 > W - inR || r->y0 < inT) { printf("  %s: status rect %d off the safe area\n", name, k); bad = 1; }
+      for (int b = 0; b < BTN_TRAY_FIRST; b++) {
+        if (!IOSTouchCore_IsShown(b)) continue;
+        const IOSTouchButton *p = &K->aButtons[b];
+        if (p->x + p->hw > r->x0 && p->x - p->hw < r->x1 && p->y + p->r > r->y0 && p->y - p->r < r->y1) {
+          printf("  %s: status rect %d over button %d\n", name, k, b);
+          bad = 1;
+        }
+      }
+    }
+    if (K->fInfoY > H - inB || K->fHealthX < inL) { printf("  %s: info off the safe area\n", name); bad = 1; }
+  }
   /* the FPS readout clear of the buttons outside the tray (which hides it) */
   for (int b = 0; b < BTN_TRAY_FIRST; b++) {
     if (!IOSTouchCore_IsShown(b)) continue;
@@ -186,6 +224,52 @@ static void TestLayout(void)
   Screen(420, 300, 0, 0, 0, 0, 1);
   CheckLayoutFits("narrow 420x300", 420, 300, 0, 0, 0, 0);
   CHECK(K->ctTrayRows == 2);
+
+  /* full-screen play: the house top row */
+  _bFull = 1;
+  Screen(568, 320, 0, 0, 0, 0, 1);
+  CheckLayoutFits("full screen iPhone SE", 568, 320, 0, 0, 0, 0);
+  Screen(844, 390, 47, 0, 47, 21, 1);
+  CheckLayoutFits("full screen iPhone 14", 844, 390, 47, 0, 47, 21);
+  Screen(1180, 820, 0, 24, 0, 20, 1);
+  CheckLayoutFits("full screen iPad", 1180, 820, 0, 24, 0, 20);
+  Screen(568, 320, 0, 0, 0, 0, 1);
+  {
+    IOSTouchRect rt, r2;
+    IOSTouchCore_StatusRects(&rt, &r2);
+    CHECK(rt.bValid && rt.x1 - rt.x0 > 180); /* (iPhone SE, the camera icon alone) */
+  }
+  Screen(844, 390, 47, 0, 47, 21, 1);
+  CHECK(!K->aButtons[BTN_SAVE].bPill && K->aButtons[BTN_SAVE].r == 22 && K->aButtons[BTN_NEXTWPN].r == 22);
+  CHECK(BX(BTN_NEXTWPN) == 47 + 24 && BX(BTN_PREVWPN) == 47 + 84 && BY(BTN_NEXTWPN) == 34);
+  CHECK(BX(BTN_MENU) == 797 - 24 && BX(BTN_LOAD) == 797 - 90 && BX(BTN_SAVE) == 797 - 156 && BY(BTN_SAVE) == 34);
+  CHECK(BX(BTN_CAMERA) < BX(BTN_SAVE) && BX(BTN_CHEAT) < BX(BTN_CAMERA) && BY(BTN_CAMERA) == 34);
+  {
+    IOSTouchRect rt, r2;
+    IOSTouchCore_StatusRects(&rt, &r2);
+    CHECK(rt.bValid && rt.x0 >= BX(BTN_PREVWPN) + 22 && rt.x1 <= BX(BTN_CAMERA) - 22 && r2.y0 >= 34 + 22);
+    CHECK(rt.x1 - rt.x0 > 300); /* (the camera icon alone: a wide band on an iPhone 14) */
+    /* the band reaches further while the cheat icon is hidden, not as far with the FPS readout on */
+    IOSTouchCore_Settings()->bShowCheat = 1;
+    IOSTouchRect rt2;
+    IOSTouchCore_StatusRects(&rt2, &r2);
+    CHECK(rt2.x1 < rt.x1 && rt2.x1 <= BX(BTN_CHEAT) - 22);
+  }
+  /* a touch up top moves or aims (no strip to keep clear) */
+  Down(1, 500, 30);
+  Move(1, 500, 60);
+  CHECK(Read().bAim);
+  Up(1, 500, 60);
+  /* dead: FIRE still presses FIRE (the game restarts the level on it) */
+  _hud.bDead = 1;
+  SetHud();
+  Down(2, BX(BTN_FIRE), BY(BTN_FIRE));
+  CHECK(Read().ulButtons & IOSTOUCH_FIRE);
+  Up(2, BX(BTN_FIRE), BY(BTN_FIRE));
+  /* switching out of full screen lays the strip out again */
+  _hud = Hud(1038, 1);
+  CHECK(IOSTouchCore_SetHud(&_hud) == 1);
+  _bFull = 0;
 
   /* iPhone 14 as in rig/mock.py */
   Phone14();

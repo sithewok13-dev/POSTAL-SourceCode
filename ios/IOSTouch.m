@@ -247,6 +247,9 @@ typedef struct {
   UIView *stickBase, *stickKnob;
   UIView *aTrayBack[2], *photoBack;
   UILabel *versionLabel, *fpsLabel, *messageLabel;
+  /* full screen: the game's info, drawn over the game (no panel) */
+  UILabel *statusLabel, *goalLabel, *healthLabel, *weaponLabel, *deadLabel;
+  NSString *infoKey;
   int iFpsLabel;
   double tMessageShown;
   UIView *cameraFlash;
@@ -363,7 +366,10 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     l.minimumScaleFactor = 0.6;
     l.layer.borderWidth = 1.5;
     l.layer.borderColor = Grey(1.0, 0.65).CGColor;
-    l.clipsToBounds = NO;
+    /* (clipped to its rounded corners: a UILabel's background is drawn square
+       otherwise -- the square "shadow" behind FIRE, DUCK and EXECUTE in
+       build 0.1.12; the hold ring and the cheat icon are inside it) */
+    l.clipsToBounds = YES;
     l.userInteractionEnabled = NO;
     l.hidden = YES;
     aViews[b] = l;
@@ -454,6 +460,19 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   selTick = [[UISelectionFeedbackGenerator alloc] init];
   lightTap = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
 
+  statusLabel = MakeLabel(13, 1.0);
+  goalLabel = MakeLabel(12, 1.0);
+  healthLabel = MakeLabel(13, 1.0);
+  weaponLabel = MakeLabel(12, 1.0);
+  deadLabel = MakeLabel(17, 1.0);
+  deadLabel.numberOfLines = 2;
+  for (UILabel *l in @[ statusLabel, goalLabel, healthLabel, weaponLabel, deadLabel ]) {
+    l.lineBreakMode = NSLineBreakByTruncatingTail;
+    l.backgroundColor = [UIColor clearColor];
+    [self addSubview:l];
+  }
+  healthLabel.textAlignment = NSTextAlignmentLeft;
+
   [self makeWheel];
   [self makeLevelPanel];
   iLooksKey = -1;
@@ -492,6 +511,9 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   }
   else if (b == BTN_DUCK || b == BTN_EXECUTE) {
     l.font = [UIFont boldSystemFontOfSize:b == BTN_DUCK ? 11 : 10];
+  }
+  else if (!p->bPill && b >= BTN_NEXTWPN && b <= BTN_MENU) {
+    l.font = [UIFont boldSystemFontOfSize:(b <= BTN_PREVWPN ? 9 : 10)]; /* (the house's 22 pt round top row) */
   }
   else if (b == BTN_NEXTWPN || b == BTN_PREVWPN) {
     l.font = [UIFont boldSystemFontOfSize:fmax(7.0, ph * 0.27)];
@@ -667,6 +689,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   }
   [self setRingLayer:autoRing progress:(bAutoRing ? k->fAutoRing : 0.0)];
 
+  [self refreshInfo];
   [self syncWheel];
   [self syncLevels];
   [CATransaction commit];
@@ -700,6 +723,99 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   if (bFpsSaved != k->bShowFps) { bFpsSaved = k->bShowFps; [d setBool:(k->bShowFps ? YES : NO) forKey:KEY_SHOW_FPS]; }
   if (bCameraSaved != k->bShowCamera) { bCameraSaved = k->bShowCamera; [d setBool:(k->bShowCamera ? YES : NO) forKey:KEY_SHOW_CAMERA]; }
   if (iKindsSaved != k->iPhotoKinds) { iKindsSaved = k->iPhotoKinds; [d setInteger:k->iPhotoKinds forKey:KEY_CAM_KINDS]; }
+}
+
+/* ---------------------------------------------------------------- the game's info (full screen) */
+/* White letters with a dark outline and shadow, no panel */
+static NSAttributedString *Outlined(NSString *str, UIFont *font, UIColor *colour)
+{
+  NSShadow *sh = [[NSShadow alloc] init];
+  sh.shadowColor = Grey(0.0, 0.75);
+  sh.shadowOffset = CGSizeMake(0, 1);
+  sh.shadowBlurRadius = 2.0;
+  return [[NSAttributedString alloc] initWithString:(str ?: @"")
+                                         attributes:@{ NSFontAttributeName : font, NSForegroundColorAttributeName : colour,
+                                                       NSStrokeColorAttributeName : Grey(0.0, 0.85),
+                                                       NSStrokeWidthAttributeName : @(-3.0), NSShadowAttributeName : sh }];
+}
+
+static UIFont *StatusFont(CGFloat size) { return [UIFont systemFontOfSize:size weight:UIFontWeightBold]; }
+static UIFont *GoalFont(CGFloat size) { return [UIFont systemFontOfSize:size weight:UIFontWeightSemibold]; }
+
+/* The biggest size from 13 down to IOSTOUCH_STATUS_MIN_FONT at which the status line (and the goal,
+   a point smaller) fit width w; 0 if none */
+static CGFloat StatusFits(NSString *st, NSString *goal, CGFloat w)
+{
+  for (CGFloat size = 13.0; size >= IOSTOUCH_STATUS_MIN_FONT - 1e-6; size -= 0.5) {
+    const CGFloat ws = [st sizeWithAttributes:@{ NSFontAttributeName : StatusFont(size) }].width + 4.0;
+    const CGFloat wg = goal.length ? [goal sizeWithAttributes:@{ NSFontAttributeName : GoalFont(size - 1.0) }].width + 4.0 : 0.0;
+    if (ws <= w && wg <= w) return size;
+  }
+  return 0.0;
+}
+
+static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat x1, CGFloat cy, CGFloat h)
+{
+  l.attributedText = text;
+  l.frame = CGRectMake(x0, cy - h * 0.5, x1 - x0, h);
+  l.hidden = NO;
+}
+
+- (void)refreshInfo
+{
+  const IOSTouchCore *k = IOSTouchCore_Get();
+  const IOSTouchHud *h = &k->hud;
+  const int bShow = k->iMode == IOSTOUCH_GAMEPLAY && h->bFullScreen;
+  IOSTouchRect rt, r2;
+  if (bShow) IOSTouchCore_StatusRects(&rt, &r2);
+  /* made again only when something it shows changed */
+  NSString *key = bShow ? [NSString stringWithFormat:@"%s|%s|%d|%d|%d|%s|%d|%.1f,%.1f|%.1f|%.0f", h->szStatus, h->szGoal, h->iHealth,
+                                     h->iKevlar, h->iAmmo, h->pszWeapon ? h->pszWeapon : "", h->bDead, rt.x0, rt.x1, k->fInfoY,
+                                     self.bounds.size.width]
+                        : @"";
+  if ([key isEqualToString:(infoKey ?: @"-")]) return;
+  infoKey = key;
+  for (UILabel *l in @[ statusLabel, goalLabel, healthLabel, weaponLabel, deadLabel ]) l.hidden = YES;
+  if (!bShow) return;
+
+  /* the status line (and the goal under it) between the top row's groups, shrunk to fit; where even the
+     smallest size doesn't fit, in the row under the top row (across the screen) */
+  NSString *st = [NSString stringWithUTF8String:h->szStatus] ?: @"";
+  NSString *goal = [NSString stringWithUTF8String:h->szGoal] ?: @"";
+  if (st.length || goal.length) {
+    CGFloat size = rt.bValid ? StatusFits(st, goal, rt.x1 - rt.x0) : 0.0;
+    const IOSTouchRect *r = &rt;
+    if (size <= 0.0) {
+      r = &r2;
+      size = StatusFits(st, goal, r2.x1 - r2.x0);
+      if (size <= 0.0) size = IOSTOUCH_STATUS_MIN_FONT; /* (then it is cut short, with "...") */
+    }
+    const CGFloat rh = r->y1 - r->y0;
+    const CGFloat ys = goal.length ? r->y0 + rh * 0.30 : (r->y0 + r->y1) * 0.5;
+    if (st.length) PlaceLine(statusLabel, Outlined(st, StatusFont(size), Grey(1.0, 1.0)), r->x0, r->x1, ys, size + 6.0);
+    if (goal.length) PlaceLine(goalLabel, Outlined(goal, GoalFont(size - 1.0), Gold(1.0)), r->x0, r->x1, r->y0 + rh * 0.74, size + 5.0);
+  }
+
+  /* health (red below 20) and kevlar, bottom left */
+  if (h->iHealth >= 0) {
+    UIColor *c = h->iHealth < 20 ? [UIColor colorWithRed:1.0 green:0.25 blue:0.2 alpha:1.0] : Grey(1.0, 1.0);
+    NSMutableAttributedString *t = [[NSMutableAttributedString alloc] init];
+    [t appendAttributedString:Outlined(@"\u2665\uFE0E ", StatusFont(14), [UIColor colorWithRed:0.95 green:0.15 blue:0.15 alpha:1.0])];
+    [t appendAttributedString:Outlined([NSString stringWithFormat:@"%d", h->iHealth], StatusFont(14), c)];
+    if (h->iKevlar > 0) [t appendAttributedString:Outlined([NSString stringWithFormat:@"   ARMOR %d", h->iKevlar], StatusFont(12), Grey(1.0, 1.0))];
+    PlaceLine(healthLabel, t, k->fHealthX, k->fHealthX + 220.0, k->fInfoY, 20.0);
+  }
+  /* the weapon in hand, bottom centre */
+  if (h->pszWeapon && h->pszWeapon[0]) {
+    NSString *name = [NSString stringWithUTF8String:h->pszWeapon] ?: [NSString stringWithCString:h->pszWeapon encoding:NSWindowsCP1252StringEncoding];
+    NSString *t = h->iAmmo >= 0 ? [NSString stringWithFormat:@"%@  %d", name ?: @"", h->iAmmo] : (name ?: @"");
+    PlaceLine(weaponLabel, Outlined(t, GoalFont(13), Grey(1.0, 1.0)), k->fWeaponX - 120.0, k->fWeaponX + 120.0, k->fInfoY, 20.0);
+  }
+  /* dead */
+  if (h->bDead) {
+    PlaceLine(deadLabel, Outlined(@"You died \u2014 tap FIRE to restart the level", StatusFont(17), Grey(1.0, 1.0)),
+              k->left + 20.0, k->right - 20.0, k->fDeadY, 48.0);
+  }
 }
 
 /* Right after a photo's pixels were taken (IOSPhotos), so none of this is in it */

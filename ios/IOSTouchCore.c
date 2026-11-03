@@ -110,6 +110,7 @@ static char **_ppszLevels = NULL;
 static int _iLevelPick = -1;
 /* the HUD rectangles the layout was made for (fractions) */
 static float _afLaidBar[4], _afLaidText[4], _afLaidGap[4];
+static int _bLaidFull = -1;
 static double _inL, _inT, _inR, _inB;
 
 static void Init(void)
@@ -118,6 +119,11 @@ static void Init(void)
   _bInit = 1;
   memset(&C, 0, sizeof(C));
   memcpy(C.aButtons, _aButtonDefs, sizeof(C.aButtons));
+  /* (a circle's half width is its radius: the tray's and PHOTO's buttons are
+     never sized by the layout, and the view sizes each button from hw x r) */
+  for (int b = 0; b < BTN_COUNT; b++) {
+    if (!C.aButtons[b].bPill) C.aButtons[b].hw = C.aButtons[b].r;
+  }
   C.iGyroMode = IOSTOUCH_GYRO_OFF;
   C.iGyroSens = IOSTOUCH_GYRO_DEFAULT_SENS;
   C.bShowCamera = 1;
@@ -215,7 +221,7 @@ static void PlaceTray(void)
     aiShown[ct++] = b;
   }
   const double kx = fmin(C.aButtons[BTN_MENU].x, C.right - IOSTOUCH_TRAY_BACK);
-  const double y0 = C.fRow2Y + C.fPillH * 0.5 + 6.0 + IOSTOUCH_TRAY_BACK;
+  const double y0 = C.fTrayY;
   int perRow = (int)floor((kx - C.left - IOSTOUCH_TRAY_BACK) / IOSTOUCH_TRAY_STEP) + 1;
   if (perRow < 1) perRow = 1;
   C.ctTrayRows = ct > perRow ? 2 : 1;
@@ -266,27 +272,9 @@ static void WheelGeometry(void)
   C.fWheelR0 = round(C.fWheelR1 * IOSTOUCH_WHEEL_R0_FRAC);
 }
 
-void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR, double inB)
+/* The game's own status strip (not full screen): pills in it, as tall as it less ~5 pt */
+static void LayoutStrip(double W, double H)
 {
-  Init();
-  C.W = W;
-  C.H = H;
-  _inL = inL; _inT = inT; _inR = inR; _inB = inB;
-  memcpy(_afLaidBar, C.hud.afTopBar, sizeof(_afLaidBar));
-  memcpy(_afLaidText, C.hud.afTopText, sizeof(_afLaidText));
-  memcpy(_afLaidGap, C.hud.afTopGap, sizeof(_afLaidGap));
-  C.left = fmax(inL, 8.0);
-  C.right = W - fmax(inR, 8.0);
-  C.top = inT;
-  C.bottom = H - fmax(inB, 8.0);
-
-  /* Bottom right: FIRE, DUCK left of it, EXECUTE straight above, IOSTOUCH_CLUSTER_GAP edge to edge (house) */
-  const double fx = C.right - IOSTOUCH_FIRE_IN_X, fy = C.bottom - IOSTOUCH_FIRE_IN_Y;
-  SetCircle(BTN_FIRE, fx, fy, IOSTOUCH_FIRE_RADIUS);
-  SetCircle(BTN_DUCK, fx - (IOSTOUCH_FIRE_RADIUS + IOSTOUCH_CLUSTER_GAP + IOSTOUCH_DUCK_RADIUS), fy, IOSTOUCH_DUCK_RADIUS);
-  SetCircle(BTN_EXECUTE, fx, fy - (IOSTOUCH_FIRE_RADIUS + IOSTOUCH_CLUSTER_GAP + IOSTOUCH_EXECUTE_RADIUS), IOSTOUCH_EXECUTE_RADIUS);
-
-  /* The game's status strip: the pills in it, as tall as it less ~5 pt */
   C.rStrip = FracRect(C.hud.afTopBar, W, H);
   if (!C.rStrip.bValid) C.rStrip = (IOSTouchRect){ 1, 0, 0, W, H * IOSTOUCH_STRIP_FRAC };
   const double stripH = C.rStrip.y1 - C.rStrip.y0;
@@ -297,6 +285,8 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
   const double row1Bottom = fmax(C.rStrip.y1, cy + ph * 0.5);
   C.fRow2Y = row1Bottom + IOSTOUCH_ROW_GAP + ph * 0.5;
 
+  for (int b = BTN_NEXTWPN; b <= BTN_MENU; b++) C.aButtons[b].bPill = 1;
+  C.aButtons[BTN_SLOWMO].bPill = 1;
   /* SAVE, LOAD, MENU at the right end */
   const double sw = IOSTOUCH_PILL_W, step = IOSTOUCH_PILL_W + IOSTOUCH_PILL_GAP;
   SetPill(BTN_MENU, C.right - 2.0 - sw * 0.5, cy, sw, ph);
@@ -382,12 +372,109 @@ void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR,
     xr -= w + IOSTOUCH_ROW_GAP;
   }
 
-  /* freeze's X where MENU is */
-  SetCircle(BTN_FREEZECLOSE, C.right - IOSTOUCH_FREEZE_CLOSE_R - 4.0, fmax(cy, IOSTOUCH_FREEZE_CLOSE_R + 4.0), IOSTOUCH_FREEZE_CLOSE_R);
-
-  /* messages under the strip, in the middle */
-  C.fMessageX = (C.left + C.right) * 0.5;
+  C.fTrayY = C.fRow2Y + C.fPillH * 0.5 + 6.0 + IOSTOUCH_TRAY_BACK;
   C.fMessageY = C.fRow2Y + 22.0;
+}
+
+/* Full screen (no status strip): the house top row (HOUSE_STYLE 3.1, Sam's
+   layout) -- NEXT WPN, PREV WPN (22 pt round) at the top left; SAVE, LOAD,
+   MENU at the top right; leftwards from SAVE the FPS readout (while it
+   shows), the camera icon, the cheat icon, the follow arrow, the
+   slow-motion label (fixed slots); the game's status text in the band
+   between the two groups (IOSTouchCore_StatusRects), or a row under them */
+static void LayoutTopRow(void)
+{
+  const double R = IOSTOUCH_TOPROW_RADIUS, y = fmax(_inT, 8.0) + 26.0;
+  for (int b = BTN_NEXTWPN; b <= BTN_MENU; b++) C.aButtons[b].bPill = 0;
+  SetCircle(BTN_NEXTWPN, C.left + 24.0, y, R);
+  SetCircle(BTN_PREVWPN, C.left + 84.0, y, R);
+  SetCircle(BTN_SAVE, C.right - 156.0, y, R);
+  SetCircle(BTN_LOAD, C.right - 90.0, y, R);
+  SetCircle(BTN_MENU, C.right - 24.0, y, R);
+  double xr = C.aButtons[BTN_SAVE].x - R - IOSTOUCH_TOPROW_GAP;
+  C.bFpsInStrip = 1; /* (in the top row) */
+  C.rFps = (IOSTouchRect){ 1, xr - IOSTOUCH_FPS_W, y - IOSTOUCH_FPS_H * 0.5, xr, y + IOSTOUCH_FPS_H * 0.5 };
+  if (C.bShowFps) xr -= IOSTOUCH_FPS_W + IOSTOUCH_TOPROW_GAP;
+  SetCircle(BTN_CAMERA, 0, y, R);
+  SetCircle(BTN_CHEAT, 0, y, R);
+  SetCircle(BTN_FOLLOWNEXT, 0, y, IOSTOUCH_ARROW_W * 0.5 + 2.0);
+  SetPill(BTN_SLOWMO, 0, y, IOSTOUCH_SLOWMO_W, 24.0);
+  C.aButtons[BTN_SLOWMO].bPill = 1;
+  const int aiChain[4] = { BTN_CAMERA, BTN_CHEAT, BTN_FOLLOWNEXT, BTN_SLOWMO };
+  for (int i = 0; i < 4; i++) {
+    const double w = ButtonW(aiChain[i]);
+    C.aButtons[aiChain[i]].x = xr - w * 0.5;
+    xr -= w + IOSTOUCH_TOPROW_GAP;
+  }
+  C.fPillH = 2.0 * R;
+  C.rStrip = (IOSTouchRect){ 0, 0, 0, 0, 0 }; /* (none: a touch up there moves or aims as anywhere) */
+  C.fRow2Y = y + R + IOSTOUCH_ROW_GAP + 12.0;
+  C.fTrayY = C.aButtons[BTN_MENU].y + 52.0;
+  /* the game's info: health bottom left, the weapon in hand bottom centre, "you died" in the middle */
+  C.fHealthX = C.left + 4.0;
+  C.fInfoY = C.bottom - 10.0;
+  C.fWeaponX = (C.left + C.right) * 0.5;
+  C.fDeadX = (C.left + C.right) * 0.5;
+  C.fDeadY = (fmax(_inT, 8.0) + C.bottom) * 0.5 - 30.0;
+  IOSTouchRect rTop, rRow2;
+  IOSTouchCore_StatusRects(&rTop, &rRow2);
+  C.fMessageY = rRow2.y1 + 14.0;
+}
+
+/* Where the status text may go: the band between the top row's two groups
+   (as far as the buttons that show now), and a row under the top row */
+void IOSTouchCore_StatusRects(IOSTouchRect *prTop, IOSTouchRect *prRow2)
+{
+  const double R = IOSTOUCH_TOPROW_RADIUS, y = C.aButtons[BTN_MENU].y;
+  double x0 = C.aButtons[BTN_PREVWPN].x + C.aButtons[BTN_PREVWPN].hw + 8.0;
+  double x1 = C.aButtons[BTN_SAVE].x - C.aButtons[BTN_SAVE].hw - 8.0;
+  if (C.bShowFps) x1 = fmin(x1, C.rFps.x0 - 8.0);
+  const int ai[4] = { BTN_CAMERA, BTN_CHEAT, BTN_FOLLOWNEXT, BTN_SLOWMO };
+  for (int i = 0; i < 4; i++) {
+    if (IOSTouchCore_IsShown(ai[i]) || (C.iMode != IOSTOUCH_GAMEPLAY && i < 2))
+      x1 = fmin(x1, C.aButtons[ai[i]].x - C.aButtons[ai[i]].hw - 8.0);
+  }
+  prTop->bValid = x1 > x0;
+  prTop->x0 = x0;
+  prTop->x1 = x1;
+  prTop->y0 = y - R;
+  prTop->y1 = y + R;
+  prRow2->bValid = 1;
+  prRow2->x0 = C.left;
+  prRow2->x1 = C.right;
+  prRow2->y0 = y + R + IOSTOUCH_ROW_GAP;
+  prRow2->y1 = prRow2->y0 + IOSTOUCH_STATUS_ROW_H;
+}
+
+void IOSTouchCore_Layout(double W, double H, double inL, double inT, double inR, double inB)
+{
+  Init();
+  C.W = W;
+  C.H = H;
+  _inL = inL; _inT = inT; _inR = inR; _inB = inB;
+  memcpy(_afLaidBar, C.hud.afTopBar, sizeof(_afLaidBar));
+  memcpy(_afLaidText, C.hud.afTopText, sizeof(_afLaidText));
+  memcpy(_afLaidGap, C.hud.afTopGap, sizeof(_afLaidGap));
+  _bLaidFull = C.hud.bFullScreen != 0;
+  C.left = fmax(inL, 8.0);
+  C.right = W - fmax(inR, 8.0);
+  C.top = inT;
+  C.bottom = H - fmax(inB, 8.0);
+
+  /* Bottom right: FIRE, DUCK left of it, EXECUTE straight above, IOSTOUCH_CLUSTER_GAP edge to edge (house) */
+  const double fx = C.right - IOSTOUCH_FIRE_IN_X, fy = C.bottom - IOSTOUCH_FIRE_IN_Y;
+  SetCircle(BTN_FIRE, fx, fy, IOSTOUCH_FIRE_RADIUS);
+  SetCircle(BTN_DUCK, fx - (IOSTOUCH_FIRE_RADIUS + IOSTOUCH_CLUSTER_GAP + IOSTOUCH_DUCK_RADIUS), fy, IOSTOUCH_DUCK_RADIUS);
+  SetCircle(BTN_EXECUTE, fx, fy - (IOSTOUCH_FIRE_RADIUS + IOSTOUCH_CLUSTER_GAP + IOSTOUCH_EXECUTE_RADIUS), IOSTOUCH_EXECUTE_RADIUS);
+
+  if (C.hud.bFullScreen) LayoutTopRow();
+  else LayoutStrip(W, H);
+
+  /* freeze's X where MENU is */
+  SetCircle(BTN_FREEZECLOSE, C.aButtons[BTN_MENU].x, fmax(C.aButtons[BTN_MENU].y, IOSTOUCH_FREEZE_CLOSE_R + 4.0), IOSTOUCH_FREEZE_CLOSE_R);
+
+  /* messages under the top row, in the middle */
+  C.fMessageX = (C.left + C.right) * 0.5;
 
   PlaceTray();
   WheelGeometry();
@@ -401,7 +488,7 @@ int IOSTouchCore_SetHud(const IOSTouchHud *pHud)
   if (bWasCheat != C.hud.bCheatOn && C.bTrayOpen) PlaceTray(); /* (LEVEL, FOLLOW come and go) */
   if (!pHud || C.W <= 0) return 0;
   return memcmp(_afLaidBar, C.hud.afTopBar, sizeof(_afLaidBar)) || memcmp(_afLaidText, C.hud.afTopText, sizeof(_afLaidText))
-         || memcmp(_afLaidGap, C.hud.afTopGap, sizeof(_afLaidGap));
+         || memcmp(_afLaidGap, C.hud.afTopGap, sizeof(_afLaidGap)) || _bLaidFull != (C.hud.bFullScreen != 0);
 }
 
 /* ------------------------------------------------------------ hit testing */
@@ -1550,6 +1637,7 @@ void IOSTouchCore_Reset(void)
   memset(_afLaidBar, 0, sizeof(_afLaidBar));
   memset(_afLaidText, 0, sizeof(_afLaidText));
   memset(_afLaidGap, 0, sizeof(_afLaidGap));
+  _bLaidFull = -1;
 }
 
 /* ------------------------------------------------------------ levels */

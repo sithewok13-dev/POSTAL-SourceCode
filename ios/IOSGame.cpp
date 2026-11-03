@@ -384,8 +384,8 @@ void IOSGame_FrameShown(const uint32_t* pul, int w, int h)
 	s_bZoomOut = false;
 	if (s_iPhoto == PHOTO_NONE || !pul || w <= 0 || h <= 0)
 		return;
-	// The game's picture without its status strips is lines 40..440 of 480
-	int iTop = h * 40 / 480, iRows = h * 400 / 480;
+	// Full-screen play: the whole frame is the game's picture (no strips to crop)
+	int iTop = 0, iRows = h;
 	if (s_iPhoto == PHOTO_BURST)
 		{
 		char szKind[32];
@@ -401,8 +401,14 @@ void IOSGame_FrameShown(const uint32_t* pul, int w, int h)
 		int iKinds = IOSTouch_PhotoKinds();
 		if (iKinds & IOSTOUCH_PHOTO_CLEAN)
 			SavePhoto(pul, w, h, iTop, iRows, "clean", 0);
+		// The info text is the overlay's now: "hud" draws it on, as "hud+buttons" draws the buttons
+#if PLATFORM_IOS
+		if (iKinds & IOSTOUCH_PHOTO_HUD)
+			SavePhoto(pul, w, h, 0, h, "hud", IOSPHOTOS_ADD_OVERLAY);
+#else
 		if (iKinds & IOSTOUCH_PHOTO_HUD)
 			SavePhoto(pul, w, h, 0, h, "hud", 0);
+#endif
 #if PLATFORM_IOS
 		if (iKinds & IOSTOUCH_PHOTO_HUDBTNS)
 			SavePhoto(pul, w, h, 0, h, "hud+buttons", IOSPHOTOS_ADD_OVERLAY);

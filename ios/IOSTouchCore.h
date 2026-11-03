@@ -92,6 +92,10 @@ extern "C" {
 #define IOSTOUCH_AUTO_HOLD         0.6   /* autoplay: a long press */
 #define IOSTOUCH_MESSAGE_TIME      3.0
 #define IOSTOUCH_VERSION_H         12.0
+#define IOSTOUCH_TOPROW_RADIUS     22.0  /* full screen: the house top row's buttons */
+#define IOSTOUCH_TOPROW_GAP        6.0
+#define IOSTOUCH_STATUS_ROW_H      34.0  /* full screen: the row under the top row the status text drops to (two lines) */
+#define IOSTOUCH_STATUS_MIN_FONT   10.0  /* the status text shrinks to this, then drops to the row under the top row */
 
 /* ------------------------------------------------------------ the buttons */
 enum {
@@ -166,6 +170,10 @@ typedef struct {
   IOSTouchRect rFps;            /* the FPS readout (left of SAVE in the strip where there is room, else in the second row) */
   int bFpsInStrip;
   double fRow2Y;                /* the second top row's middle (icons that don't fit in the strip, the FPS readout) */
+  double fTrayY;                /* the tray's (first) row */
+  /* full screen: where the view draws the game's info (health left-aligned at fHealthX, the weapon
+     centred on fWeaponX, both on fInfoY; "you died" centred on fDeadX, fDeadY) */
+  double fHealthX, fWeaponX, fInfoY, fDeadX, fDeadY;
   IOSTouchRect arTrayBack[2]; int ctTrayRows;
   IOSTouchRect rPhotoBack;
   double fVersionX, fVersionY;
@@ -233,6 +241,10 @@ const char *IOSTouchCore_LevelName(int i);
 void IOSTouchCore_PickLevel(int i);   /* the view's list: row i tapped (closes the list) */
 void IOSTouchCore_CloseLevelList(void);
 int  IOSTouchCore_TakeLevelPick(void);
+
+/* Full screen: the band between the top row's groups (as far as the buttons that show now) and
+   the row under the top row, where the status text and the goal go */
+void IOSTouchCore_StatusRects(IOSTouchRect *prTop, IOSTouchRect *prRow2);
 
 /* Buttons */
 int  IOSTouchCore_IsShown(int button);
