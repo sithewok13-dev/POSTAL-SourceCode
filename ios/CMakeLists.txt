@@ -26,6 +26,7 @@ target_compile_definitions(POSTAL PRIVATE
   PLATFORM_UNIX=1 PLATFORM_IOS=1 LOCALE=US TARGET=POSTAL_2015 ALLOW_TWINSTICK)
 # As the makefile: char is signed (arm64 makes it unsigned by default), no warnings
 target_compile_options(POSTAL PRIVATE -fsigned-char -w
+  $<$<COMPILE_LANGUAGE:CXX>:-Wno-c++11-narrowing>
   $<$<COMPILE_LANGUAGE:CXX>:-std=gnu++11>)
 
 target_include_directories(POSTAL PRIVATE

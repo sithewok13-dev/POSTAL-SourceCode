@@ -138,14 +138,14 @@
 //#define RSP_PROFILE_ON
 #include "ORANGE/Debug/profile.h"
 
-#if PLATFORM_MACOSX
+#if PLATFORM_MACOSX || PLATFORM_IOS  // Added: iOS (SDL2main starts UIKit, then calls main)
 // This redefines main() to something else, since libSDLmain-osx.a will have
 //  the actual application entry point...that will setup some Cocoa stuff and
 //  then call the redefined main() in this file...
 #include "SDL.h"
+#endif
 #if PLATFORM_IOS
 #include "IOSSupport.h"  // Added: iOS
-#endif
 #endif
 
 #if WITH_STEAMWORKS
