@@ -836,6 +836,17 @@ class CDude : public CCharacter
 		// Added: iOS: the touch controls' cheat sets this (ios/IOSGame.cpp)
 		void IOS_SetInvincible(bool bOn)	{ m_bInvincible = bOn; }
 		bool IOS_IsInvincible(void)	{ return m_bInvincible; }
+		// Added: iOS: would EXECUTE do something now (the same tests the input does,
+		// without picking the victim): for the touch EXECUTE button to show only then
+		bool IOS_CanExecute(void)
+			{
+			if (m_bDead || m_state == State_Execute || !m_stockpile.m_sMachineGun)
+				return false;
+			U16 idVictim = m_idVictim;
+			bool bFound = FindExecutee();
+			m_idVictim = idVictim;
+			return bFound;
+			}
 
 		
 	//---------------------------------------------------------------------------

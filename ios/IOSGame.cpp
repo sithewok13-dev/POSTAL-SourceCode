@@ -113,7 +113,15 @@ static void SetCheat(bool bOn)
 	if (bOn)
 		PlaySample(g_smidDemonLaugh1, SampleMaster::UserFeedBack);
 	if (!bOn)
-		EndInvincible();					// keeps the weapons, as JK's sithewok
+		EndInvincible();					// keeps the weapons, as JK's sithewok...
+	if (!bOn && s_pdude)
+		{
+		// ...but the Deathwad, which only a cheat ever gives: it goes with the cheat
+		s_pdude->m_stockpile.m_sDeathWadLauncher = 0;
+		if (s_pdude->GetCurrentWeapon() == CDude::DeathWad
+			&& !s_pdude->SetWeapon(CDude::SemiAutomatic, false))
+			s_pdude->SetWeapon(CDude::NoWeapon, false);
+		}
 	if (!bOn)
 		s_bFollow = false;					// FOLLOW is a cheat's tool: it goes with it
 	IOSTouch_ShowMessage(bOn ? "Cheat on: can't die, every weapon, endless ammo" : "Cheat off", 2.5);
@@ -140,6 +148,17 @@ static const struct { CDude::WeaponType type; const char* pszName; } s_aWheel[] 
 	{ CDude::DoubleBarrel,		"Double Barrel" },
 	};
 #define IOSGAME_WHEEL_SLICES ((int)(sizeof(s_aWheel) / sizeof(s_aWheel[0])))
+
+// The wheel's slices now (indices into s_aWheel): every weapon, but the Deathwad
+// only while the cheat is on (only a cheat ever gives it). Returns the count.
+static int WheelSlices(int* aiWheel)
+	{
+	int ct = 0;
+	for (int i = 0; i < IOSGAME_WHEEL_SLICES; i++)
+		if (s_bCheat || s_aWheel[i].type != CDude::DeathWad)
+			aiWheel[ct++] = i;
+	return ct;
+	}
 
 static bool Owns(CDude* pdude, CDude::WeaponType type, int16_t sAmmo)
 	{
@@ -182,14 +201,18 @@ static const struct { CDude::WeaponType type; int16_t x, y, w, h; bool bFire; } 
 	{ CDude::DeathWad,			306, 442, 54, 21, true },
 	};
 
-static CHood* s_phoodIcons = NULL;	// the hood the icons were last cut from
+static CHood* s_phoodIcons = NULL;	// the hood the icons were last cut from...
+static bool s_bIconsCheat = false;		// ...and the cheat then (it changes the slices)
 
 static void SendIcons(CRealm* prealm)
 	{
 	CHood* phood = prealm ? prealm->m_phood : NULL;
-	if (!phood || phood == s_phoodIcons || !phood->m_pimFullBar || !phood->m_pimFullBar->m_pData)
+	if (!phood || (phood == s_phoodIcons && s_bIconsCheat == s_bCheat) || !phood->m_pimFullBar || !phood->m_pimFullBar->m_pData)
 		return;
 	s_phoodIcons = phood;
+	s_bIconsCheat = s_bCheat;
+	int aiWheel[IOSGAME_WHEEL_SLICES];
+	const int ctSlices = WheelSlices(aiWheel);
 	RImage* pim = phood->m_pimFullBar;
 	// The empty bar is the same picture without the weapons: where the two match is
 	// the bar's background, which the wheel shows see-through (just the weapon)
@@ -198,11 +221,11 @@ static void SendIcons(CRealm* prealm)
 		pimEmpty = NULL;
 	// The bar picture may be just the bottom strip, or the whole 480 lines
 	int16_t sYOff = (pim->m_sHeight < 480) ? (int16_t)(480 - pim->m_sHeight) : 0;
-	for (int i = 0; i < IOSGAME_WHEEL_SLICES; i++)
+	for (int i = 0; i < ctSlices; i++)
 		{
 		for (unsigned k = 0; k < sizeof(s_aIcon) / sizeof(s_aIcon[0]); k++)
 			{
-			if (s_aIcon[k].type != s_aWheel[i].type)
+			if (s_aIcon[k].type != s_aWheel[aiWheel[i]].type)
 				continue;
 			int16_t x0 = s_aIcon[k].x, y0 = s_aIcon[k].y - sYOff, w = s_aIcon[k].w, h = s_aIcon[k].h;
 			if (x0 < 0 || y0 < 0 || x0 + w > pim->m_sWidth || y0 + h > pim->m_sHeight)
@@ -274,18 +297,20 @@ static void SendWeapons(CDude* pdude)
 	if (pdude && pdude->m_state != CThing3d::State_Dead)
 		{
 		w.bValid = 1;
-		w.ctWeapons = IOSGAME_WHEEL_SLICES;
-		for (int i = 0; i < IOSGAME_WHEEL_SLICES; i++)
+		int aiWheel[IOSGAME_WHEEL_SLICES];
+		w.ctWeapons = WheelSlices(aiWheel);
+		for (int i = 0; i < w.ctWeapons; i++)
 			{
+			const int k = aiWheel[i];
 			CThing::ClassIDType id;
 			int16_t* psNum = NULL;
-			pdude->GetWeaponInfo(s_aWheel[i].type, &id, &psNum);
+			pdude->GetWeaponInfo(s_aWheel[k].type, &id, &psNum);
 			int16_t sAmmo = psNum ? *psNum : 0;
-			w.aiType[i] = s_aWheel[i].type;
-			w.apszName[i] = s_aWheel[i].pszName;
-			w.abOwned[i] = Owns(pdude, s_aWheel[i].type, sAmmo) ? 1 : 0;
-			w.aiAmmo[i] = (s_bCheat && s_aWheel[i].type == CDude::SemiAutomatic) ? -1 : sAmmo;
-			if (pdude->GetCurrentWeapon() == s_aWheel[i].type)
+			w.aiType[i] = s_aWheel[k].type;
+			w.apszName[i] = s_aWheel[k].pszName;
+			w.abOwned[i] = Owns(pdude, s_aWheel[k].type, sAmmo) ? 1 : 0;
+			w.aiAmmo[i] = (s_bCheat && s_aWheel[k].type == CDude::SemiAutomatic) ? -1 : sAmmo;
+			if (pdude->GetCurrentWeapon() == s_aWheel[k].type)
 				w.iCurrent = i;
 			}
 		}
@@ -557,6 +582,7 @@ void IOSGame_Present(void* pSDLWindow)
 	hud.bFollowing = s_bFollow;
 	hud.iSlowMo = s_iSlow;
 	hud.uLevel = s_uLevel;
+	hud.bCanExecute = (bPlaying && s_pdude && s_pdude->IOS_CanExecute()) ? 1 : 0;
 
 	static unsigned s_uDrawn = 0;
 	unsigned req = IOSTouch_Update(pSDLWindow, iMode, &hud, ++s_uDrawn);

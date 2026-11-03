@@ -184,6 +184,10 @@ int IOSTouchCore_IsShown(int b)
   case BTN_CAMERA: return C.bShowCamera;
   case BTN_FOLLOWNEXT: return C.hud.bFollowing;
   case BTN_SLOWMO: return C.hud.iSlowMo != 0;
+  /* EXECUTE: only while it would do something -- or while a finger still holds it (the execution
+     began and the victim died under it: it stays pressed until that finger lifts). Hidden, nothing
+     finds it: a touch on its spot is the aim stick's. */
+  case BTN_EXECUTE: return C.hud.bCanExecute || C.aButtonHeld[BTN_EXECUTE] > 0;
   case BTN_TRAY_LEVEL: return C.bTrayOpen && LevelShows();
   case BTN_TRAY_FOLLOW: return C.bTrayOpen && FollowShows();
   default: break;
@@ -879,9 +883,16 @@ static int WheelPressSlid(Slot *s, double x, double y)
 void IOSTouchCore_SetWeapons(const IOSTouchWeapons *pw)
 {
   Init();
+  const int ctWas = C.wpn.ctWeapons;
   if (pw) C.wpn = *pw;
   else memset(&C.wpn, 0, sizeof(C.wpn));
-  if (C.bWheelOpen && !WheelCanOpen()) WheelClose(-1);
+  if (C.wpn.ctWeapons < 0) C.wpn.ctWeapons = 0;
+  if (C.wpn.ctWeapons > IOSTOUCH_WPN_MAX) C.wpn.ctWeapons = IOSTOUCH_WPN_MAX;
+  /* The slices are laid out from ctWeapons every time (IOSTouchCore_WheelSliceWidth/Deg: evenly round
+     the ring, the cancel gap at the bottom). The game can't take a pick, or the slices changed under
+     the open wheel (the cheat adds or drops the Deathwad: a slice now means another weapon): it
+     closes, picking nothing. */
+  if (C.bWheelOpen && (!WheelCanOpen() || C.wpn.ctWeapons != ctWas)) WheelClose(-1);
 }
 
 void IOSTouchCore_WheelMiddle(const char **ppszTitle, int *piCount, const char **ppszHint)

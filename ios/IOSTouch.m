@@ -212,6 +212,7 @@ typedef struct {
   UIImpactFeedbackGenerator *lightTap;
   /* the settings as saved */
   int bFpsSaved, bCameraSaved;
+  int bExecWanted, bExecShownNow, bExecFading; /* EXECUTE: whether it should show, whether it does (fading in or shown) */
   int iLooksKey;
 }
 - (void)refresh;
@@ -536,12 +537,18 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   for (int b = 0; b < BTN_COUNT; b++) {
     UILabel *l = aViews[b];
     const int bShown = IOSTouchCore_IsShown(b);
-    if (l.hidden == bShown) l.hidden = !bShown;
-    if (!bShown) continue;
+    if (b == BTN_EXECUTE) {
+      bExecWanted = bShown; /* (it fades in and out: after this transaction, fadeExecute) */
+      if (!bShown) continue;
+    }
+    else {
+      if (l.hidden == bShown) l.hidden = !bShown;
+      if (!bShown) continue;
+    }
     [self placeButton:b]; /* (the tray changes with what it holds; the strip when FPS is switched) */
     const int bLit = IOSTouchCore_IsLit(b), bOn = IOSTouchCore_IsOn(b);
     CGFloat alpha = (bLit || bOn || b >= BTN_TRAY_FIRST) ? 1.0 : IOSTOUCH_IDLE_ALPHA;
-    if (l.alpha != alpha) l.alpha = alpha;
+    if (l.alpha != alpha && !(b == BTN_EXECUTE && bExecFading)) l.alpha = alpha;
     if (b != BTN_FIRE) {
       UIColor *bg = bLit ? Grey(1.0, 0.30) : Grey(0.12, 0.52);
       l.backgroundColor = bg;
@@ -621,6 +628,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   [self syncWheel];
   [self syncLevels];
   [CATransaction commit];
+  [self fadeExecute];
 
   /* haptics */
   IOSTouchCore *w = IOSTouchCore_Settings();
@@ -765,6 +773,35 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
     CGContextRestoreGState(c);
   }
   CGContextRestoreGState(c);
+}
+
+/* EXECUTE comes and goes with what the game says (IOSTouchCore_IsShown): a quick fade, not a pop */
+#define EXECUTE_FADE 0.15
+- (void)fadeExecute
+{
+  if (bExecWanted == bExecShownNow) return;
+  bExecShownNow = bExecWanted;
+  UILabel *l = aViews[BTN_EXECUTE];
+  const CGFloat to = IOSTouchCore_IsLit(BTN_EXECUTE) ? 1.0 : IOSTOUCH_IDLE_ALPHA;
+  [l.layer removeAllAnimations];
+  bExecFading = 1;
+  if (bExecShownNow) {
+    if (l.hidden) {
+      l.alpha = 0.0;
+      l.hidden = NO;
+    }
+    [UIView animateWithDuration:EXECUTE_FADE delay:0 options:UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{ l.alpha = to; }
+                     completion:^(BOOL done) { self->bExecFading = 0; }];
+  }
+  else {
+    [UIView animateWithDuration:EXECUTE_FADE delay:0 options:UIViewAnimationOptionBeginFromCurrentState
+                     animations:^{ l.alpha = 0.0; }
+                     completion:^(BOOL done) {
+                       self->bExecFading = 0;
+                       if (!self->bExecShownNow) l.hidden = YES;
+                     }];
+  }
 }
 
 /* Right after a photo's pixels were taken (IOSPhotos), so none of this is in it */
@@ -1208,10 +1245,25 @@ unsigned int IOSTouch_Update(void *pSDLWindow, int iMode, const IOSTouchHud *pHu
 
 void IOSTouch_ReadInput(IOSTouchInput *pInput) { IOSTouchCore_ReadInput(pInput); }
 
-void IOSTouch_SetWeapons(const IOSTouchWeapons *pWeapons) { IOSTouchCore_SetWeapons(pWeapons); }
+void IOSTouch_SetWeapons(const IOSTouchWeapons *pWeapons)
+{
+  IOSTouchCore_SetWeapons(pWeapons);
+  /* icons of slices the wheel no longer has (the game sends them all again when the count changes) */
+  static int ctWas = -1;
+  const int ct = IOSTouchCore_WheelSlices();
+  if (ct != ctWas) {
+    for (int i = ct; i < IOSTOUCH_WPN_MAX; i++) {
+      for (int st = 0; st < 3; st++) _aIconImages[i][st] = nil;
+    }
+    _uIconGen++;
+    ctWas = ct;
+  }
+}
 
 void IOSTouch_SetWeaponIcon(int iSlice, const unsigned char *pubRGBA, int iWidth, int iHeight)
 {
+  /* (any slice index: the game may send the icons before the new count; the wheel draws only its
+     ctWeapons slices, and a count change drops the icons past it -- IOSTouch_SetWeapons) */
   if (iSlice < 0 || iSlice >= IOSTOUCH_WPN_MAX) return;
   @autoreleasepool {
     for (int st = 0; st < 3; st++) _aIconImages[iSlice][st] = nil;

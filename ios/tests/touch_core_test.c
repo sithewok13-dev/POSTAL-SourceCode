@@ -117,6 +117,7 @@ static void CheckLayoutFits(const char *name, double W, double H, double inL, do
   _hud.bCheatOn = 1;
   _hud.bFollowing = 1;
   _hud.iSlowMo = 2;
+  _hud.bCanExecute = 1;
   IOSTouchCore_SetHud(&_hud);
   IOSTouchCore_SetLevels((const char *const[]){ "Hwy", "Mine" }, 2);
   IOSTouchCore_Settings()->bShowCheat = 1;
@@ -461,12 +462,16 @@ static void TestStick(void)
   CHECK(in.ulButtons & IOSTOUCH_FIRE);
   in = Read();
   CHECK(!(in.ulButtons & IOSTOUCH_FIRE));
-  /* DUCK, EXECUTE */
+  /* DUCK, EXECUTE (while it can do something) */
+  _hud.bCanExecute = 1;
+  SetHud();
   Down(4, BX(BTN_DUCK) + 30, BY(BTN_DUCK)); /* within the slop */
   Down(5, BX(BTN_EXECUTE), BY(BTN_EXECUTE));
   in = Read();
   CHECK((in.ulButtons & IOSTOUCH_DUCK) && (in.ulButtons & IOSTOUCH_EXECUTE));
   Up(4, 0, 0); Up(5, 0, 0);
+  _hud.bCanExecute = 0;
+  SetHud();
   /* a second finger on the left while the stick is down aims */
   Down(1, 100, 300);
   Down(2, 200, 300);
@@ -610,6 +615,133 @@ static void TestAimStick(void)
   in = Read();
   CHECK(K->bWheelOpen && !in.bAim && !(in.ulButtons & IOSTOUCH_FIRE) && !K->bAimStick);
   Up(5, 0, 0); Up(2, 0, 0);
+}
+
+/* ------------------------------------------------------------ the wheel's slice count changing (the cheat's Deathwad) */
+static double PX(double x, double deg, double dist) { return x + dist * cos(deg * M_PI / 180.0); }
+static double PY(double y, double deg, double dist) { return y - dist * sin(deg * M_PI / 180.0); }
+
+static IOSTouchWeapons WeaponsN(int n)
+{
+  IOSTouchWeapons w;
+  memset(&w, 0, sizeof(w));
+  w.bValid = 1;
+  w.ctWeapons = n;
+  for (int i = 0; i < n; i++) {
+    w.aiType[i] = 100 + i;
+    w.abOwned[i] = 1;
+    w.aiAmmo[i] = 10;
+  }
+  w.iCurrent = 0;
+  return w;
+}
+
+static void TestWheelCount(void)
+{
+  printf("wheel slice count\n");
+  Phone14();
+  const int an[2] = { 13, 14 };
+  for (int k = 0; k < 2; k++) {
+    IOSTouchWeapons w = WeaponsN(an[k]);
+    IOSTouchCore_SetWeapons(&w);
+    const int n = IOSTouchCore_WheelSlices();
+    const double wd = IOSTouchCore_WheelSliceWidth();
+    int bEven = n == an[k] && fabs(wd - fmin(29.0, 322.0 / n)) < 1e-9;
+    for (int i = 1; i < n; i++) bEven = bEven && fabs(IOSTouchCore_WheelSliceDeg(i - 1) - IOSTouchCore_WheelSliceDeg(i) - wd) < 1e-9;
+    /* symmetric about straight up: the cancel gap centred at the bottom, no other gap */
+    bEven = bEven && fabs((IOSTouchCore_WheelSliceDeg(0) + IOSTouchCore_WheelSliceDeg(n - 1)) * 0.5 - 90.0) < 1e-9;
+    bEven = bEven && n * wd <= 322.0 + 1e-9;
+    CHECK(bEven);
+    printf("  %d slices of %.2f degrees, the gap %.1f\n", n, wd, 360.0 - n * wd);
+  }
+  /* open with 14, the game sends 13 (the cheat went off): the wheel closes, picking nothing */
+  IOSTouchWeapons w14 = WeaponsN(14), w13 = WeaponsN(13);
+  IOSTouchCore_SetWeapons(&w14);
+  const double nx = BX(BTN_NEXTWPN), ny = BY(BTN_NEXTWPN);
+  Down(0, nx, ny);
+  Move(0, nx + 15, ny + 15);
+  const double d13 = IOSTouchCore_WheelSliceDeg(13);
+  Move(0, PX(nx, d13, 50), PY(ny, d13, 50));
+  CHECK(K->bWheelOpen && IOSTouchCore_WheelPointed(NULL) == 13);
+  IOSTouchCore_SetWeapons(&w14); /* (the same: stays open) */
+  CHECK(K->bWheelOpen);
+  IOSTouchCore_SetWeapons(&w13);
+  CHECK(!K->bWheelOpen && !IOSTouchCore_HoldsGame());
+  Up(0, PX(nx, d13, 50), PY(ny, d13, 50));
+  IOSTouchInput in = Read();
+  CHECK(in.iSelectWeapon == 0);
+  /* opened again with 13: laid out for 13, its last slice picks the 13th weapon */
+  Down(0, nx, ny);
+  Move(0, nx + 15, ny + 15);
+  const double d12 = IOSTouchCore_WheelSliceDeg(12);
+  Move(0, PX(nx, d12, 50), PY(ny, d12, 50));
+  CHECK(K->bWheelOpen && IOSTouchCore_WheelSlices() == 13 && IOSTouchCore_WheelPointed(NULL) == 12);
+  Up(0, PX(nx, d12, 50), PY(ny, d12, 50));
+  in = Read();
+  CHECK(in.iSelectWeapon == 1 + 112);
+  /* 13 -> 14 while open: closes too */
+  Down(0, nx, ny);
+  Move(0, nx + 15, ny + 15);
+  CHECK(K->bWheelOpen);
+  IOSTouchCore_SetWeapons(&w14);
+  CHECK(!K->bWheelOpen);
+  Up(0, nx + 15, ny + 15);
+  CHECK(Read().iSelectWeapon == 0);
+}
+
+/* ------------------------------------------------------------ EXECUTE, only while it can */
+static void TestExecute(void)
+{
+  printf("execute\n");
+  Phone14();
+  const double ex = BX(BTN_EXECUTE), ey = BY(BTN_EXECUTE);
+  const double dx = BX(BTN_DUCK), fx = BX(BTN_FIRE), fr = K->aButtons[BTN_FIRE].r, dr = K->aButtons[BTN_DUCK].r;
+  /* hidden while it can't; a touch on its spot is the aim stick's, not EXECUTE */
+  CHECK(!IOSTouchCore_IsShown(BTN_EXECUTE) && IOSTouchCore_ButtonAt(ex, ey) != BTN_EXECUTE);
+  Down(0, ex, ey);
+  Move(0, ex, ey - 30);
+  IOSTouchInput in = Read();
+  CHECK(K->bAimStick && in.bAim && Near(in.fAimY, 1.0) && !(in.ulButtons & IOSTOUCH_EXECUTE));
+  /* ...even when it shows meanwhile (the touch stays what it began as) */
+  _hud.bCanExecute = 1;
+  SetHud();
+  in = Read();
+  CHECK(!(in.ulButtons & IOSTOUCH_EXECUTE) && in.bAim);
+  Up(0, ex, ey - 30);
+  /* shown: same place and size; DUCK and FIRE unmoved */
+  CHECK(IOSTouchCore_IsShown(BTN_EXECUTE) && BX(BTN_EXECUTE) == ex && BY(BTN_EXECUTE) == ey && K->aButtons[BTN_EXECUTE].r == 31);
+  CHECK(BX(BTN_DUCK) == dx && BX(BTN_FIRE) == fx && K->aButtons[BTN_FIRE].r == fr && K->aButtons[BTN_DUCK].r == dr);
+  /* held as it stops being possible (the execution began): stays shown and pressed until the lift */
+  Down(1, ex, ey);
+  in = Read();
+  CHECK(in.ulButtons & IOSTOUCH_EXECUTE);
+  _hud.bCanExecute = 0;
+  SetHud();
+  Frames(0.5);
+  in = Read();
+  CHECK(IOSTouchCore_IsShown(BTN_EXECUTE) && IOSTouchCore_IsLit(BTN_EXECUTE) && (in.ulButtons & IOSTOUCH_EXECUTE));
+  Up(1, ex, ey);
+  in = Read();
+  CHECK(!IOSTouchCore_IsShown(BTN_EXECUTE) && !(in.ulButtons & IOSTOUCH_EXECUTE));
+  /* a quick tap while it can: one read's press */
+  _hud.bCanExecute = 1;
+  SetHud();
+  Down(1, ex, ey); Up(1, ex, ey);
+  _hud.bCanExecute = 0;
+  SetHud();
+  in = Read();
+  CHECK(in.ulButtons & IOSTOUCH_EXECUTE);
+  in = Read();
+  CHECK(!(in.ulButtons & IOSTOUCH_EXECUTE));
+  /* dead: unchanged (a tap on its spot restarts) */
+  _hud.bDead = 1;
+  _hud.bCanExecute = 1;
+  SetHud();
+  Down(2, ex, ey); Up(2, ex, ey);
+  CHECK(Frame(0.016) == IOSTOUCH_REQ_RESTART);
+  _hud.bDead = 0;
+  _hud.bCanExecute = 0;
+  SetHud();
 }
 
 /* ------------------------------------------------------------ the game's menus: BACK */
@@ -861,8 +993,6 @@ static IOSTouchWeapons Weapons(void)
 }
 
 /* A point dist out from (x,y) at deg (counter-clockwise from right, screen up +) */
-static double PX(double x, double deg, double dist) { return x + dist * cos(deg * M_PI / 180.0); }
-static double PY(double y, double deg, double dist) { return y - dist * sin(deg * M_PI / 180.0); }
 
 static void TestWheel(void)
 {
@@ -1052,6 +1182,8 @@ int main(void)
   TestStick();
   TestAimStick();
   TestMenuBack();
+  TestExecute();
+  TestWheelCount();
   TestSaveLoad();
   TestTray();
   TestWheel();

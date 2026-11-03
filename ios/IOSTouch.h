@@ -44,6 +44,7 @@ typedef struct IOSTouchHud {
   int   iAmmo;           /* ammo of the weapon in hand, -1: none to show (infinite) */
   const char *pszWeapon; /* name of the weapon in hand, or NULL */
   int   bDead;           /* the dude is dead: the game restarts the level on FIRE */
+  int   bCanExecute;     /* EXECUTE would do something now (someone writhing in reach, the machine gun owned) */
 } IOSTouchHud;
 
 /* What the player asked for (IOSTouch_Update's result), done by the game side */
