@@ -973,13 +973,19 @@ static void AimMoved(Slot *s, double x, double y)
   }
 }
 
+/* A finger that has aimed and is still down (in its dead zone too: it keeps the
+   aim until it lifts, rather than handing it back to an older finger) */
 static int AimsNow(const Slot *s)
 {
-  if (!s->touch || !s->bAimArmed) return 0;
+  if (!s->touch || !s->bAimEver) return 0;
   return s->role == ROLE_AIM || (s->role == ROLE_BUTTON && C.aButtons[s->button].bAimWhileHeld);
 }
 
-/* The newest aiming finger's direction; the aim stick to draw (the newest one down) */
+/* The aiming finger that wins (the newest to aim), for HeldBits: only its stick fires */
+static const Slot *_pAimWinner;
+
+/* The newest aiming finger's direction (none while it's in its dead zone); the aim
+   stick to draw (the newest one down) */
 static void UpdateAim(void)
 {
   const Slot *best = NULL, *stick = NULL;
@@ -1000,12 +1006,13 @@ static void UpdateAim(void)
     }
     C.fAimStickX = kx;
     C.fAimStickY = ky;
-    C.bAimFiring = stick->bAimFire;
+    C.bAimFiring = stick == best && stick->bAimFire; /* (only the winner fires: see HeldBits) */
   }
   else {
     C.bAimFiring = 0;
   }
-  if (!best) {
+  _pAimWinner = best;
+  if (!best || !best->bAimArmed) {
     C.bAim = 0;
     return;
   }
@@ -1280,9 +1287,8 @@ void IOSTouchCore_TouchEnded(const void *touch, double x, double y, double t, in
 static unsigned int HeldBits(void)
 {
   unsigned int ul = 0;
-  for (int i = 0; i < MAX_TOUCHES; i++) {
-    if (_aSlots[i].touch && _aSlots[i].role == ROLE_AIM && _aSlots[i].bAimFire) ul |= IOSTOUCH_FIRE; /* (the aim stick pushed full) */
-  }
+  /* the aim stick pushed full -- only the one that has the aim, so fire, aim and what's drawn agree */
+  if (_pAimWinner && _pAimWinner->touch && _pAimWinner->role == ROLE_AIM && _pAimWinner->bAimFire) ul |= IOSTOUCH_FIRE;
   for (int b = 0; b < BTN_COUNT; b++) {
     if (C.aButtonHeld[b] && C.aButtons[b].kind == KIND_HOLD) ul |= C.aButtons[b].ulAction;
   }

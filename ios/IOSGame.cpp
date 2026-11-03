@@ -639,9 +639,20 @@ U32 IOSGame_Input(U32 input)
 		}
 	if (s_bFollow)
 		return input & ~(INPUT_FIRE | INPUT_EXECUTE | INPUT_DUCK);	// the dude waits while the camera is away
-	if ((s_in.ulButtons & IOSTOUCH_FIRE) && s_pdude && s_pdude->IsDead())
-		input |= INPUT_REVIVE;					// dead: FIRE restarts the level (the game's revive key)
-	if (s_in.ulButtons & IOSTOUCH_FIRE)			input |= INPUT_FIRE;
+	// Dead: FIRE restarts the level (the game's revive key), but only a fresh press:
+	// a FIRE (or aim stick) still held from the fight that killed him must be let go first
+	static bool s_bReviveArmed = false;
+	bool bDead = s_pdude && s_pdude->IsDead();
+	if (bDead)
+		{
+		if (!(s_in.ulButtons & IOSTOUCH_FIRE))
+			s_bReviveArmed = true;
+		else if (s_bReviveArmed)
+			input |= INPUT_REVIVE;
+		}
+	else
+		s_bReviveArmed = false;
+	if ((s_in.ulButtons & IOSTOUCH_FIRE) && !bDead)	input |= INPUT_FIRE;
 	if (s_in.ulButtons & IOSTOUCH_DUCK)			input |= INPUT_DUCK;
 	if (s_in.ulButtons & IOSTOUCH_EXECUTE)		input |= INPUT_EXECUTE;
 	// POSTAL 2015 runs by default (its run key walks). The stick walks below its

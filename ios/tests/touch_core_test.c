@@ -570,6 +570,25 @@ static void TestAimStick(void)
   in = Read();
   CHECK(in.bAim && Near(in.fAimX, 1.0) && K->bAimStick && K->fAimStickOX == ox);
   Up(2, ox + 30, oy);
+  /* two sticks: the older pushed full (firing), the newer light: the newer has the aim
+     and nothing fires (fire, aim and the drawn knob agree) */
+  Down(2, ox, oy);
+  Move(2, ox + 0.9 * IOSTOUCH_AIM_RADIUS, oy);
+  CHECK(Read().ulButtons & IOSTOUCH_FIRE);
+  Down(4, 450, 150);
+  Move(4, 450, 150 - 20);       /* up, light */
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimY, 1.0) && !(in.ulButtons & IOSTOUCH_FIRE) && !K->bAimFiring);
+  /* the newer back in its dead zone: still the newer's (no aim), not handed back to the older */
+  Move(4, 452, 150);
+  in = Read();
+  CHECK(!in.bAim && !(in.ulButtons & IOSTOUCH_FIRE));
+  /* the newer lifts: the older has the aim (and its fire) again */
+  Up(4, 452, 150);
+  in = Read();
+  CHECK(in.bAim && Near(in.fAimX, 1.0) && (in.ulButtons & IOSTOUCH_FIRE));
+  Up(2, 0, 0);
+  CHECK(!(Read().ulButtons & IOSTOUCH_FIRE));
   /* the move stick and the aim stick together */
   Down(1, 150, 250);
   Move(1, 150, 250 - 50);
