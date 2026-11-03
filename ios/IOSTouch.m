@@ -1,18 +1,15 @@
 /* POSTAL for iOS: the touch overlay (UIKit, ARC). See IOSTouch.h.
 
-   A thin view over SDL's: it hands UIKit's touches and CoreMotion's samples
-   to the plain C core (IOSTouchCore.c, which the Linux harness tests) and
+   A thin view over SDL's: it hands UIKit's touches to the plain C core (IOSTouchCore.c, which the Linux harness tests) and
    draws what the core says. It never calls the game: IOSTouch_Update
    returns requests, IOSTouch_ReadInput plain input values.
 
    Ported from Serious Sam's ios/IOSTouch.m (the view, the wheel's drawing,
-   the level list, tilt aiming's CoreMotion side, the settings). */
+   the level list, the settings). */
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
-#import <CoreMotion/CoreMotion.h>
 #import <AudioToolbox/AudioToolbox.h>
-#include <os/lock.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,70 +20,12 @@
 #include "IOSPhotos.h"
 
 /* Kept in the app's settings (the house keys; each app keeps its own) */
-#define KEY_GYRO_MODE   @"iosTouchGyroMode"
-#define KEY_GYRO_SENS   @"iosTouchGyroSens"
 #define KEY_SHOW_FPS    @"iosTouchShowFps"
 #define KEY_SHOW_CAMERA @"iosTouchShowCamera"
-#define KEY_CAM_KINDS   @"iosTouchCameraKinds"
 /* (the cheat icon is not kept: the cheat itself starts off each launch, and the icon with it) */
 
 #define CAMERA_SOUND 1108 /* iOS's shutter */
-#define BURST_SOUND  1104 /* a short tick, for a burst's later shots */
 
-/* ---------------------------------------------------------------- tilt (CoreMotion side) */
-static CMMotionManager *_pMotion = nil;
-static NSOperationQueue *_pMotionQueue = nil;
-static os_unfair_lock _gyroLock = OS_UNFAIR_LOCK_INIT;
-static IOSTouchGyroFilter _gyroFilter; /* under _gyroLock */
-static int _iGyroSide = 0;             /* under _gyroLock: which way round the screen is */
-static int _bGyroRunning = 0;
-
-static void GyroSetup(void)
-{
-  if (_pMotion) return;
-  _pMotion = [[CMMotionManager alloc] init];
-  _pMotionQueue = [[NSOperationQueue alloc] init];
-  _pMotionQueue.maxConcurrentOperationCount = 1;
-  _pMotionQueue.qualityOfService = NSQualityOfServiceUserInteractive;
-  IOSTouchCore_Settings()->bGyroAvailable = _pMotion.deviceMotionAvailable ? 1 : 0;
-}
-
-static void GyroRun(int bRun)
-{
-  bRun = bRun != 0;
-  if (bRun == _bGyroRunning) return;
-  _bGyroRunning = bRun;
-  if (!bRun) {
-    [_pMotion stopDeviceMotionUpdates];
-    return;
-  }
-  os_unfair_lock_lock(&_gyroLock);
-  IOSTouchGyro_Reset(&_gyroFilter);
-  os_unfair_lock_unlock(&_gyroLock);
-  _pMotion.deviceMotionUpdateInterval = 1.0 / IOSTOUCH_GYRO_HZ;
-  [_pMotion startDeviceMotionUpdatesUsingReferenceFrame:CMAttitudeReferenceFrameXArbitraryZVertical
-                                                toQueue:_pMotionQueue
-                                            withHandler:^(CMDeviceMotion *dm, NSError *err) {
-    if (!dm || err) return;
-    const CMRotationRate w = dm.rotationRate;
-    const CMAcceleration g = dm.gravity;
-    os_unfair_lock_lock(&_gyroLock);
-    IOSTouchGyro_Sample(&_gyroFilter, _iGyroSide, w.x, w.y, w.z, g.x, g.y, g.z, dm.timestamp);
-    os_unfair_lock_unlock(&_gyroLock);
-  }];
-}
-
-/* +1 landscape left (the top of the phone on the right), -1 landscape right, 0 neither */
-static int ScreenSide(UIView *v)
-{
-  UIWindowScene *scene = v.window.windowScene;
-  if (scene) {
-    const UIInterfaceOrientation o = scene.interfaceOrientation;
-    return (o == UIInterfaceOrientationLandscapeLeft) ? 1 : ((o == UIInterfaceOrientationLandscapeRight) ? -1 : 0);
-  }
-  const SDL_DisplayOrientation o = SDL_GetDisplayOrientation(0);
-  return (o == SDL_ORIENTATION_LANDSCAPE_FLIPPED) ? 1 : ((o == SDL_ORIENTATION_LANDSCAPE) ? -1 : 0);
-}
 
 /* ---------------------------------------------------------------- the wheel's icons */
 /* As the game hands them over (IOSTouch_SetWeaponIcon), per slice, in the three tints */
@@ -243,9 +182,8 @@ typedef struct {
   CALayer *cheatIcon;
   UIImage *cheatOn, *cheatOff;
   int bCheatIconOn;
-  UILabel *burstBadge;
   UIView *stickBase, *stickKnob;
-  UIView *aTrayBack[2], *photoBack;
+  UIView *aTrayBack[2];
   UILabel *versionLabel, *fpsLabel, *messageLabel;
   /* full screen: the game's info, drawn over the game (no panel) */
   UILabel *statusLabel, *goalLabel, *healthLabel, *weaponLabel, *deadLabel;
@@ -253,7 +191,6 @@ typedef struct {
   int iFpsLabel;
   double tMessageShown;
   UIView *cameraFlash;
-  CAShapeLayer *autoRing; /* autoplay: the long press filling */
   /* the wheel */
   UIView *wheelView;
   CAShapeLayer *wheelDisc, *wheelNeedle;
@@ -272,11 +209,12 @@ typedef struct {
   UISelectionFeedbackGenerator *selTick;
   UIImpactFeedbackGenerator *lightTap;
   /* the settings as saved */
-  int iGyroModeSaved, iGyroSensSaved, bFpsSaved, bCameraSaved, iKindsSaved;
+  int bFpsSaved, bCameraSaved;
   int iLooksKey;
 }
 - (void)refresh;
 - (void)cameraFeedback:(int)bLight;
+- (void)drawInfoInContext:(CGContextRef)c width:(CGFloat)w height:(CGFloat)h;
 @end
 
 @implementation IOSTouchOverlay
@@ -325,37 +263,17 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
   /* the settings: OFF, 1.5x, no FPS, the camera icon on, CLEAN unless set (the cheat icon starts hidden) */
-  GyroSetup();
   IOSTouchCore *k = IOSTouchCore_Settings();
   NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-  if ([d objectForKey:KEY_GYRO_MODE]) {
-    const NSInteger m = [d integerForKey:KEY_GYRO_MODE];
-    k->iGyroMode = (m >= 0 && m < IOSTOUCH_GYRO_NUM_MODES) ? (int)m : IOSTOUCH_GYRO_OFF;
-  }
-  if ([d objectForKey:KEY_GYRO_SENS]) {
-    const float f = [d floatForKey:KEY_GYRO_SENS];
-    for (int i = 0; i < IOSTOUCH_GYRO_NUM_SENS; i++) {
-      if (fabsf(g_afIOSTouchGyroSens[i] - f) < fabsf(g_afIOSTouchGyroSens[k->iGyroSens] - f)) k->iGyroSens = i;
-    }
-  }
   k->bShowFps = [d boolForKey:KEY_SHOW_FPS] ? 1 : 0;
   if ([d objectForKey:KEY_SHOW_CAMERA]) k->bShowCamera = [d boolForKey:KEY_SHOW_CAMERA] ? 1 : 0;
-  if ([d objectForKey:KEY_CAM_KINDS]) {
-    const int kinds = (int)[d integerForKey:KEY_CAM_KINDS] & (IOSTOUCH_PHOTO_CLEAN | IOSTOUCH_PHOTO_HUD | IOSTOUCH_PHOTO_HUDBTNS);
-    k->iPhotoKinds = kinds ? kinds : IOSTOUCH_PHOTO_CLEAN;
-  }
-  iGyroModeSaved = k->iGyroMode;
-  iGyroSensSaved = k->iGyroSens;
   bFpsSaved = k->bShowFps;
   bCameraSaved = k->bShowCamera;
-  iKindsSaved = k->iPhotoKinds;
 
   for (int i = 0; i < 2; i++) {
     aTrayBack[i] = MakeBack(IOSTOUCH_TRAY_BACK);
     [self addSubview:aTrayBack[i]];
   }
-  photoBack = MakeBack(IOSTOUCH_TRAY_BACK);
-  [self addSubview:photoBack];
 
   for (int b = 0; b < BTN_COUNT; b++) {
     UILabel *l = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -378,10 +296,9 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     [self addSubview:l];
   }
   /* the tray over the rest */
-  for (int b = BTN_TRAY_FIRST; b <= BTN_PHOTO_LAST; b++) [self bringSubviewToFront:aViews[b]];
+  for (int b = BTN_TRAY_FIRST; b <= BTN_TRAY_LAST; b++) [self bringSubviewToFront:aViews[b]];
   [self insertSubview:aTrayBack[0] belowSubview:aViews[BTN_TRAY_FIRST]];
   [self insertSubview:aTrayBack[1] belowSubview:aViews[BTN_TRAY_FIRST]];
-  [self insertSubview:photoBack belowSubview:aViews[BTN_TRAY_FIRST]];
 
   UIColor *white = Grey(1.0, 0.92);
   NSAttributedString *s;
@@ -396,12 +313,6 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   [aViews[BTN_CHEAT].layer addSublayer:cheatIcon];
   bCheatIconOn = -1;
 
-  burstBadge = MakeLabel(9, 1.0);
-  burstBadge.backgroundColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.15 alpha:0.95];
-  burstBadge.layer.cornerRadius = 7.0;
-  burstBadge.clipsToBounds = YES;
-  burstBadge.font = [UIFont monospacedDigitSystemFontOfSize:9 weight:UIFontWeightBold];
-  [self addSubview:burstBadge];
 
   stickBase = [[UIView alloc] initWithFrame:CGRectMake(0, 0, IOSTOUCH_STICK_RADIUS * 2, IOSTOUCH_STICK_RADIUS * 2)];
   stickBase.backgroundColor = Grey(1.0, 0.08);
@@ -451,11 +362,6 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   cameraFlash.userInteractionEnabled = NO;
   [self addSubview:cameraFlash];
 
-  autoRing = MakeRing();
-  autoRing.lineWidth = 4.0;
-  autoRing.bounds = CGRectMake(0, 0, 72, 72);
-  autoRing.path = [UIBezierPath bezierPathWithArcCenter:CGPointMake(36, 36) radius:34 startAngle:-M_PI_2 endAngle:3 * M_PI_2 clockwise:YES].CGPath;
-  [self.layer addSublayer:autoRing];
 
   selTick = [[UISelectionFeedbackGenerator alloc] init];
   lightTap = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
@@ -510,7 +416,13 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     l.layer.borderColor = [UIColor colorWithRed:1.0 green:0.6 blue:0.5 alpha:0.75].CGColor;
   }
   else if (b == BTN_DUCK || b == BTN_EXECUTE) {
-    l.font = [UIFont boldSystemFontOfSize:b == BTN_DUCK ? 11 : 10];
+    /* one line, as big as fits across 80% of the circle (EXECUTE), 12 pt at most, never under 9 */
+    l.numberOfLines = 1;
+    NSString *t = [NSString stringWithUTF8String:p->label];
+    const CGFloat w12 = [t sizeWithAttributes:@{ NSFontAttributeName : [UIFont boldSystemFontOfSize:12] }].width;
+    const CGFloat size = w12 > 0 ? fmax(9.0, fmin(12.0, 12.0 * (p->r * 2 * 0.80) / w12)) : 12.0;
+    l.font = [UIFont boldSystemFontOfSize:size];
+    l.minimumScaleFactor = 9.0 / size;
   }
   else if (!p->bPill && b >= BTN_NEXTWPN && b <= BTN_MENU) {
     l.font = [UIFont boldSystemFontOfSize:(b <= BTN_PREVWPN ? 9 : 10)]; /* (the house's 22 pt round top row) */
@@ -526,7 +438,7 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
     l.textColor = Gold(1.0);
   }
   else if (b >= BTN_TRAY_FIRST) {
-    l.font = (b == BTN_TRAY_SENS || b == BTN_TRAY_GYRO) ? CondensedBold(10) : [UIFont boldSystemFontOfSize:9];
+    l.font = [UIFont boldSystemFontOfSize:9];
   }
   if (b != BTN_FIRE) l.backgroundColor = Grey(0.12, 0.52);
   if (b == BTN_CAMERA) {
@@ -599,8 +511,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
     [self placeButton:b]; /* (the tray changes with what it holds; the strip when FPS is switched) */
     const int bLit = IOSTouchCore_IsLit(b), bOn = IOSTouchCore_IsOn(b);
     CGFloat alpha = (bLit || bOn || b >= BTN_TRAY_FIRST) ? 1.0 : IOSTOUCH_IDLE_ALPHA;
-    if (b == BTN_TRAY_GYRO && !k->bGyroAvailable) alpha *= 0.45;
-    if (b == BTN_TRAY_SENS && (!k->bGyroAvailable || k->iGyroMode == IOSTOUCH_GYRO_OFF)) alpha *= 0.45;
     if (l.alpha != alpha) l.alpha = alpha;
     if (b != BTN_FIRE) {
       UIColor *bg = bLit ? Grey(1.0, 0.30) : Grey(0.12, 0.52);
@@ -618,15 +528,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
     bCheatIconOn = k->hud.bCheatOn != 0;
     cheatIcon.contents = (__bridge id)(bCheatIconOn ? cheatOn : cheatOff).CGImage;
   }
-  /* the burst's count on the camera */
-  const int bBadge = k->bBursting && IOSTouchCore_IsShown(BTN_CAMERA);
-  if (burstBadge.hidden == bBadge) burstBadge.hidden = !bBadge;
-  if (bBadge) {
-    burstBadge.text = [NSString stringWithFormat:@"%d", k->ctBurstShots];
-    burstBadge.bounds = CGRectMake(0, 0, 16, 14);
-    const IOSTouchButton *c = &k->aButtons[BTN_CAMERA];
-    burstBadge.center = CGPointMake(c->x + c->r * 0.8, c->y + c->r * 0.8);
-  }
 
   /* rings */
   [self setRing:BTN_SAVE progress:k->fSaveRing];
@@ -635,7 +536,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   [self setRing:BTN_NEXTWPN progress:k->afWheelRing[0]];
   [self setRing:BTN_PREVWPN progress:k->afWheelRing[1]];
   [self setRing:BTN_CAMERA progress:k->fCameraRing];
-  [self setRing:BTN_TRAY_CAMERA progress:k->fTrayCamRing];
 
   /* the stick, only under the thumb */
   if (k->bStickActive && k->iMode == IOSTOUCH_GAMEPLAY) {
@@ -654,9 +554,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
     if (bShow) SetFrameOf(aTrayBack[i], &k->arTrayBack[i]);
     if (aTrayBack[i].hidden == bShow) aTrayBack[i].hidden = !bShow;
   }
-  const int bPhoto = bTray && k->bPhotoRowOpen;
-  if (bPhoto) SetFrameOf(photoBack, &k->rPhotoBack);
-  if (photoBack.hidden == bPhoto) photoBack.hidden = !bPhoto;
   if (bTray) versionLabel.center = CGPointMake(k->fVersionX, k->fVersionY);
   if (versionLabel.hidden == bTray) versionLabel.hidden = !bTray;
 
@@ -670,7 +567,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   }
 
   /* the message */
-  const int bMsg = IOSTouchCore_MessageShows(now) && (k->iMode == IOSTOUCH_GAMEPLAY || k->iMode == IOSTOUCH_AUTOPLAY);
+  const int bMsg = IOSTouchCore_MessageShows(now) && k->iMode == IOSTOUCH_GAMEPLAY;
   if (bMsg && tMessageShown != k->tMessage) {
     tMessageShown = k->tMessage;
     messageLabel.text = [NSString stringWithUTF8String:k->szMessage] ?: @"";
@@ -680,14 +577,6 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
   }
   if (messageLabel.hidden == bMsg) messageLabel.hidden = !bMsg;
 
-  /* autoplay: only the long press's ring, round the finger, once it is clearly a press (not a tap) */
-  const int bAutoRing = k->iMode == IOSTOUCH_AUTOPLAY && k->fAutoRing > 0.2f;
-  if (bAutoRing) {
-    [self.layer addSublayer:autoRing]; /* (on top) */
-    /* (above the finger, where it can be seen; below it near the top) */
-    autoRing.position = CGPointMake(k->fAutoX, k->fAutoY >= 90.0 ? k->fAutoY - 50.0 : k->fAutoY + 50.0);
-  }
-  [self setRingLayer:autoRing progress:(bAutoRing ? k->fAutoRing : 0.0)];
 
   [self refreshInfo];
   [self syncWheel];
@@ -715,14 +604,8 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
 {
   const IOSTouchCore *k = IOSTouchCore_Get();
   NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-  if (iGyroModeSaved != k->iGyroMode) { iGyroModeSaved = k->iGyroMode; [d setInteger:k->iGyroMode forKey:KEY_GYRO_MODE]; }
-  if (iGyroSensSaved != k->iGyroSens) {
-    iGyroSensSaved = k->iGyroSens;
-    [d setFloat:g_afIOSTouchGyroSens[k->iGyroSens] forKey:KEY_GYRO_SENS];
-  }
   if (bFpsSaved != k->bShowFps) { bFpsSaved = k->bShowFps; [d setBool:(k->bShowFps ? YES : NO) forKey:KEY_SHOW_FPS]; }
   if (bCameraSaved != k->bShowCamera) { bCameraSaved = k->bShowCamera; [d setBool:(k->bShowCamera ? YES : NO) forKey:KEY_SHOW_CAMERA]; }
-  if (iKindsSaved != k->iPhotoKinds) { iKindsSaved = k->iPhotoKinds; [d setInteger:k->iPhotoKinds forKey:KEY_CAM_KINDS]; }
 }
 
 /* ---------------------------------------------------------------- the game's info (full screen) */
@@ -818,6 +701,23 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
   }
 }
 
+/* The game's info as it shows now (not the buttons, icons or messages), onto a w x h screenshot (IOSPhotos) */
+- (void)drawInfoInContext:(CGContextRef)c width:(CGFloat)w height:(CGFloat)h
+{
+  const CGSize b = self.bounds.size;
+  if (b.width <= 0 || b.height <= 0 || self.hidden) return;
+  CGContextSaveGState(c);
+  CGContextScaleCTM(c, w / b.width, h / b.height);
+  for (UILabel *l in @[ statusLabel, goalLabel, healthLabel, weaponLabel, deadLabel ]) {
+    if (l.hidden) continue;
+    CGContextSaveGState(c);
+    CGContextTranslateCTM(c, l.frame.origin.x, l.frame.origin.y);
+    [l.layer renderInContext:c];
+    CGContextRestoreGState(c);
+  }
+  CGContextRestoreGState(c);
+}
+
 /* Right after a photo's pixels were taken (IOSPhotos), so none of this is in it */
 - (void)cameraFeedback:(int)bLight
 {
@@ -827,7 +727,7 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
   [UIView animateWithDuration:(bLight ? 0.12 : 0.3) delay:0
                       options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionAllowUserInteraction
                    animations:^{ self->cameraFlash.alpha = 0.0; } completion:nil];
-  AudioServicesPlaySystemSound(bLight ? BURST_SOUND : CAMERA_SOUND);
+  AudioServicesPlaySystemSound(CAMERA_SOUND);
   [lightTap impactOccurred];
 }
 
@@ -1168,7 +1068,7 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
 /* ---------------------------------------------------------------- C API */
 static IOSTouchOverlay *_pOverlay = nil;
 
-UIView *IOSTouch_OverlayView(void) { return _pOverlay; }
+void IOSTouch_DrawInfo(CGContextRef c, CGFloat w, CGFloat h) { [_pOverlay drawInfoInContext:c width:w height:h]; }
 
 void IOSTouch_CameraFeedback(int bLight)
 {
@@ -1189,7 +1089,7 @@ static void SetMode(int iMode)
 {
   IOSTouchCore_SetMode(iMode, CACurrentMediaTime());
   if (_pOverlay) {
-    /* hidden: SDL gets the touches (as mouse clicks); autoplay: shown, but draws nothing */
+    /* hidden: SDL gets the touches (as mouse clicks) */
     _pOverlay.hidden = (iMode == IOSTOUCH_HIDDEN);
     [_pOverlay refresh];
   }
@@ -1226,7 +1126,6 @@ static unsigned int UpdateOverlay(void *pSDLWindow, int iMode, const IOSTouchHud
     [_pOverlay setNeedsLayout];
     [_pOverlay layoutIfNeeded];
   }
-  IOSPhotos_SetBatch(IOSTouchCore_Get()->bBursting);
   /* Photos access asked once the camera icon shows in play (if iOS never asked) */
   static int bPhotosAsked = 0;
   if (!bPhotosAsked && iMode == IOSTOUCH_GAMEPLAY && IOSTouchCore_Get()->bShowCamera) {
@@ -1234,16 +1133,6 @@ static unsigned int UpdateOverlay(void *pSDLWindow, int iMode, const IOSTouchHud
     IOSPhotos_AskAccess(NULL);
   }
 
-  /* tilt, after the frame's touches came in */
-  const int bActive = [UIApplication sharedApplication].applicationState == UIApplicationStateActive;
-  const int side = ScreenSide(_pOverlay);
-  GyroRun(bActive && side != 0 && !_pOverlay.hidden && IOSTouchCore_GyroWanted());
-  os_unfair_lock_lock(&_gyroLock);
-  _iGyroSide = side;
-  const double yaw = _gyroFilter.fYaw;
-  _gyroFilter.fYaw = 0.0;
-  os_unfair_lock_unlock(&_gyroLock);
-  IOSTouchCore_GyroFrame(_bGyroRunning ? yaw : 0.0, _bGyroRunning ? side : 0, CACurrentMediaTime());
 
   const unsigned int ul = IOSTouchCore_Tick(CACurrentMediaTime(), ulFramesDrawn);
   if (!_pOverlay.hidden) [_pOverlay refresh];
@@ -1292,5 +1181,3 @@ void IOSTouch_ShowMessage(const char *pszText, double fSeconds)
 void IOSTouch_SetLevels(const char *const *ppszNames, int ctLevels) { IOSTouchCore_SetLevels(ppszNames, ctLevels); }
 
 int IOSTouch_TakeLevelPick(void) { return IOSTouchCore_TakeLevelPick(); }
-
-int IOSTouch_PhotoKinds(void) { return IOSTouchCore_PhotoKinds(); }

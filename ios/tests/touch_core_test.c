@@ -40,7 +40,6 @@ static int _bFull = 0; /* lay out for full-screen play (no status strip) */
 static void Screen(double W, double H, double inL, double inT, double inR, double inB, int bGap)
 {
   IOSTouchCore_Reset();
-  IOSTouchCore_Settings()->bGyroAvailable = 1;
   _hud = Hud(480.0 * W / H, bGap);
   if (_bFull) {
     memset(_hud.afTopBar, 0, sizeof(_hud.afTopBar));
@@ -124,15 +123,11 @@ static void CheckLayoutFits(const char *name, double W, double H, double inL, do
   IOSTouchCore_Settings()->bShowCamera = 1;
   IOSTouchCore_Settings()->bShowFps = 1;
   IOSTouchCore_Layout(W, H, inL, inT, inR, inB);
-  /* open the tray and PHOTO's row */
+  /* open the tray */
   Down(0, BX(BTN_MENU), BY(BTN_MENU));
   Frames(0.6);
   Up(0, BX(BTN_MENU), BY(BTN_MENU));
   CHECK(K->bTrayOpen);
-  Down(0, BX(BTN_TRAY_CAMERA), BY(BTN_TRAY_CAMERA));
-  Frames(0.6);
-  Up(0, BX(BTN_TRAY_CAMERA), BY(BTN_TRAY_CAMERA));
-  CHECK(K->bPhotoRowOpen);
   for (int b = 0; b < BTN_COUNT; b++) {
     if (!IOSTouchCore_IsShown(b)) continue;
     if (!ButtonInside(b, inL, inT, W - inR, H - inB)) {
@@ -221,8 +216,8 @@ static void TestLayout(void)
   Screen(844, 390, 47, 0, 47, 21, 0);
   CheckLayoutFits("iPhone 14, no gap", 844, 390, 47, 0, 47, 21);
   /* a made-up narrow screen: the tray wraps to a second row */
-  Screen(420, 300, 0, 0, 0, 0, 1);
-  CheckLayoutFits("narrow 420x300", 420, 300, 0, 0, 0, 0);
+  Screen(340, 300, 0, 0, 0, 0, 1);
+  CheckLayoutFits("narrow 340x300", 340, 300, 0, 0, 0, 0);
   CHECK(K->ctTrayRows == 2);
 
   /* full-screen play: the house top row */
@@ -237,7 +232,9 @@ static void TestLayout(void)
   {
     IOSTouchRect rt, r2;
     IOSTouchCore_StatusRects(&rt, &r2);
-    CHECK(rt.bValid && rt.x1 - rt.x0 > 180); /* (iPhone SE, the camera icon alone) */
+    /* (iPhone SE, the camera icon alone: centred on the screen, as wide as it stays clear of it) */
+    CHECK(rt.bValid && fabs((rt.x0 + rt.x1) * 0.5 - 284) < 1e-9 && fabs(rt.x1 - (BX(BTN_CAMERA) - 22 - 8)) < 1e-9);
+    CHECK(fabs((r2.x0 + r2.x1) * 0.5 - 284) < 1e-9 && r2.x0 == 8 && r2.x1 == 560);
   }
   Screen(844, 390, 47, 0, 47, 21, 1);
   CHECK(!K->aButtons[BTN_SAVE].bPill && K->aButtons[BTN_SAVE].r == 22 && K->aButtons[BTN_NEXTWPN].r == 22);
@@ -248,12 +245,19 @@ static void TestLayout(void)
     IOSTouchRect rt, r2;
     IOSTouchCore_StatusRects(&rt, &r2);
     CHECK(rt.bValid && rt.x0 >= BX(BTN_PREVWPN) + 22 && rt.x1 <= BX(BTN_CAMERA) - 22 && r2.y0 >= 34 + 22);
-    CHECK(rt.x1 - rt.x0 > 300); /* (the camera icon alone: a wide band on an iPhone 14) */
-    /* the band reaches further while the cheat icon is hidden, not as far with the FPS readout on */
+    CHECK(rt.x1 - rt.x0 > 270 && fabs((rt.x0 + rt.x1) * 0.5 - 422) < 1e-9); /* (the camera icon alone) */
+    /* the cheat icon showing: narrower, never moved sideways; FPS on: narrower still */
     IOSTouchCore_Settings()->bShowCheat = 1;
-    IOSTouchRect rt2;
+    IOSTouchRect rt2, rt3;
     IOSTouchCore_StatusRects(&rt2, &r2);
-    CHECK(rt2.x1 < rt.x1 && rt2.x1 <= BX(BTN_CHEAT) - 22);
+    CHECK(rt2.x1 < rt.x1 && rt2.x1 <= BX(BTN_CHEAT) - 22 && fabs((rt2.x0 + rt2.x1) * 0.5 - 422) < 1e-9);
+    IOSTouchCore_Settings()->bShowFps = 1;
+    IOSTouchCore_Layout(844, 390, 47, 0, 47, 21);
+    IOSTouchCore_StatusRects(&rt3, &r2);
+    CHECK(rt3.x1 <= rt2.x1 && fabs((rt3.x0 + rt3.x1) * 0.5 - 422) < 1e-9 && rt3.x1 <= K->rFps.x0 - 8 + 1e-9);
+    IOSTouchCore_Settings()->bShowFps = 0;
+    IOSTouchCore_Settings()->bShowCheat = 0;
+    IOSTouchCore_Layout(844, 390, 47, 0, 47, 21);
   }
   /* a touch up top moves or aims (no strip to keep clear) */
   Down(1, 500, 30);
@@ -473,24 +477,29 @@ static void TestTray(void)
   Phone14();
   OpenTray();
   CHECK(K->bTrayOpen);
-  CHECK(IOSTouchCore_IsShown(BTN_TRAY_SENS) && IOSTouchCore_IsShown(BTN_TRAY_GYRO) && IOSTouchCore_IsShown(BTN_TRAY_FPS)
-        && IOSTouchCore_IsShown(BTN_TRAY_KEYS) && IOSTouchCore_IsShown(BTN_TRAY_CHEAT) && IOSTouchCore_IsShown(BTN_TRAY_AUTOPLAY)
-        && IOSTouchCore_IsShown(BTN_TRAY_CAMERA));
+  CHECK(IOSTouchCore_IsShown(BTN_TRAY_FPS) && IOSTouchCore_IsShown(BTN_TRAY_KEYS) && IOSTouchCore_IsShown(BTN_TRAY_CHEAT)
+        && IOSTouchCore_IsShown(BTN_TRAY_SLOW) && IOSTouchCore_IsShown(BTN_TRAY_CAMERA));
   IOSTouchCore_SetLevels((const char *const[]){ "Hwy", "Mine", "Ctrl" }, 3);
   CHECK(!IOSTouchCore_IsShown(BTN_TRAY_LEVEL) && !IOSTouchCore_IsShown(BTN_TRAY_FOLLOW));
   /* the order, left to right, 50 apart */
-  CHECK(fabs(BX(BTN_TRAY_GYRO) - BX(BTN_TRAY_SENS) - 50) < 1e-6 && fabs(BX(BTN_TRAY_CAMERA) - BX(BTN_TRAY_AUTOPLAY) - 50) < 1e-6);
-  CHECK(fabs(BX(BTN_TRAY_CAMERA) - BX(BTN_MENU)) < 1e-6);
-  /* GYRO: OFF -> TOUCH -> ALWAYS -> OFF, stays open; SENS dim while OFF */
-  CHECK(K->iGyroMode == IOSTOUCH_GYRO_OFF && K->iGyroSens == 1);
-  Tap(BTN_TRAY_SENS);
-  CHECK(K->iGyroSens == 1); /* (does nothing while OFF) */
-  Tap(BTN_TRAY_GYRO);
-  CHECK(K->iGyroMode == IOSTOUCH_GYRO_TOUCH && K->bTrayOpen);
-  Tap(BTN_TRAY_SENS);
-  CHECK(K->iGyroSens == 2 && K->bTrayOpen);
+  /* CHEAT, SLOW, CAMERA, FPS, keyboard (under MENU), 50 apart */
+  CHECK(fabs(BX(BTN_TRAY_SLOW) - BX(BTN_TRAY_CHEAT) - 50) < 1e-6 && fabs(BX(BTN_TRAY_CAMERA) - BX(BTN_TRAY_SLOW) - 50) < 1e-6
+        && fabs(BX(BTN_TRAY_FPS) - BX(BTN_TRAY_CAMERA) - 50) < 1e-6 && fabs(BX(BTN_TRAY_KEYS) - BX(BTN_TRAY_FPS) - 50) < 1e-6);
+  CHECK(fabs(BX(BTN_TRAY_KEYS) - BX(BTN_MENU)) < 1e-6);
+  const double xCheat = BX(BTN_TRAY_CHEAT);
+  /* SLOW: asks for the next speed, stays open; says the speed, gold while on */
   char buf[32];
-  CHECK(strcmp(IOSTouchCore_Label(BTN_TRAY_SENS, buf, sizeof(buf)), "SENS\n2.0x") == 0);
+  Tap(BTN_TRAY_SLOW);
+  CHECK(Frame(0.016) == IOSTOUCH_REQ_SLOWMO && K->bTrayOpen && !IOSTouchCore_IsOn(BTN_TRAY_SLOW));
+  CHECK(strcmp(IOSTouchCore_Label(BTN_TRAY_SLOW, buf, sizeof(buf)), "SLOW") == 0);
+  _hud.iSlowMo = 2;
+  SetHud();
+  CHECK(IOSTouchCore_IsOn(BTN_TRAY_SLOW) && strcmp(IOSTouchCore_Label(BTN_TRAY_SLOW, buf, sizeof(buf)), "SLOW \xC2\xBD") == 0);
+  _hud.iSlowMo = 4;
+  SetHud();
+  CHECK(strcmp(IOSTouchCore_Label(BTN_TRAY_SLOW, buf, sizeof(buf)), "SLOW \xC2\xBC") == 0);
+  _hud.iSlowMo = 0;
+  SetHud();
   /* CHEAT: shows the icon and asks the cheat on */
   Tap(BTN_TRAY_CHEAT);
   CHECK(K->bShowCheat && (Frame(0.016) & IOSTOUCH_REQ_CHEAT));
@@ -499,7 +508,9 @@ static void TestTray(void)
   SetHud();
   CHECK(IOSTouchCore_IsOn(BTN_TRAY_CHEAT));
   CHECK(IOSTouchCore_IsShown(BTN_TRAY_LEVEL) && IOSTouchCore_IsShown(BTN_TRAY_FOLLOW));
-  CHECK(fabs(BX(BTN_TRAY_LEVEL) - BX(BTN_TRAY_CHEAT) - 50) < 1e-6 && fabs(BX(BTN_TRAY_FOLLOW) - BX(BTN_MENU)) < 1e-6);
+  /* LEVEL and FOLLOW come in at the left end: the rest stay put */
+  CHECK(fabs(BX(BTN_TRAY_FOLLOW) - BX(BTN_TRAY_LEVEL) - 50) < 1e-6 && fabs(BX(BTN_TRAY_CHEAT) - BX(BTN_TRAY_FOLLOW) - 50) < 1e-6
+        && BX(BTN_TRAY_CHEAT) == xCheat && fabs(BX(BTN_TRAY_KEYS) - BX(BTN_MENU)) < 1e-6);
   CHECK(IOSTouchCore_IsShown(BTN_CHEAT));
   /* the cheat icon toggles */
   Down(0, 400, 200); Up(0, 400, 200); /* (closes the tray) */
@@ -517,13 +528,10 @@ static void TestTray(void)
   Down(0, 20, 300); /* a touch off the list closes it */
   CHECK(!K->bLevelListOpen && IOSTouchCore_TakeLevelPick() == -1);
   Up(0, 20, 300);
-  /* FOLLOW, AUTOPLAY, keyboard: ask, close */
+  /* FOLLOW, keyboard: ask, close */
   OpenTray();
   Tap(BTN_TRAY_FOLLOW);
   CHECK(!K->bTrayOpen && Frame(0.016) == IOSTOUCH_REQ_FOLLOW);
-  OpenTray();
-  Tap(BTN_TRAY_AUTOPLAY);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_AUTOPLAY);
   OpenTray();
   Tap(BTN_TRAY_KEYS);
   CHECK(Frame(0.016) == IOSTOUCH_REQ_KEYBOARD);
@@ -535,21 +543,16 @@ static void TestTray(void)
   /* CHEAT tapped again hides the icon (the cheat is off: no request) */
   Tap(BTN_TRAY_CHEAT);
   CHECK(!K->bShowCheat && Frame(0.016) == 0);
-  /* CAMERA: tap hides / shows the icon; held, PHOTO's options */
+  /* CAMERA: tap hides / shows the icon (held: nothing more) */
   CHECK(K->bShowCamera);
   Tap(BTN_TRAY_CAMERA);
   CHECK(!K->bShowCamera && !IOSTouchCore_IsShown(BTN_CAMERA) && K->bTrayOpen);
   Tap(BTN_TRAY_CAMERA);
   CHECK(K->bShowCamera);
   Down(0, BX(BTN_TRAY_CAMERA), BY(BTN_TRAY_CAMERA));
-  Frames(0.6);
+  Frames(0.8);
   Up(0, BX(BTN_TRAY_CAMERA), BY(BTN_TRAY_CAMERA));
-  CHECK(K->bPhotoRowOpen && K->bShowCamera && IOSTouchCore_IsShown(BTN_PHOTO_HUD));
-  Tap(BTN_PHOTO_HUD);
-  Tap(BTN_PHOTO_HUDBTNS);
-  CHECK(IOSTouchCore_PhotoKinds() == (IOSTOUCH_PHOTO_CLEAN | IOSTOUCH_PHOTO_HUD | IOSTOUCH_PHOTO_HUDBTNS));
-  Tap(BTN_PHOTO_CLEAN); Tap(BTN_PHOTO_HUD); Tap(BTN_PHOTO_HUDBTNS); /* the last stays */
-  CHECK(IOSTouchCore_PhotoKinds() == IOSTOUCH_PHOTO_HUDBTNS);
+  CHECK(!K->bShowCamera && K->bTrayOpen && Frame(0.016) == 0);
 }
 
 /* ------------------------------------------------------------ the wheel */
@@ -703,50 +706,24 @@ static void TestCamera(void)
   Up(0, cx, cy);
   ul |= Frame(0.016);
   CHECK(ul == IOSTOUCH_REQ_PHOTO);
-  /* slid sideways: a burst, every 0.2 s while down, 10 at most */
-  Down(0, cx, cy);
-  Move(0, cx - 12, cy);
-  CHECK(K->bBursting && (Frame(0.016) & IOSTOUCH_REQ_BURST));
-  int ct = 1;
-  for (int i = 0; i < 300; i++) ct += (Frame(1.0 / 60) & IOSTOUCH_REQ_BURST) ? 1 : 0;
-  CHECK(ct == IOSTOUCH_BURST_MAX && !K->bBursting);
-  Up(0, cx - 12, cy);
-  CHECK(Frames(0.1) == 0);
-  /* a short burst */
-  Down(0, cx, cy);
-  Move(0, cx + 15, cy);
-  ct = (Frame(0.016) & IOSTOUCH_REQ_BURST) ? 1 : 0;
-  for (int i = 0; i < 27; i++) ct += (Frame(1.0 / 60) & IOSTOUCH_REQ_BURST) ? 1 : 0; /* ~0.47 s */
-  Up(0, cx + 15, cy);
-  ct += (Frames(0.5) & IOSTOUCH_REQ_BURST) ? 1 : 0;
-  CHECK(ct == 3);
-  /* slid down 36 pt: zoom-out; less: nothing */
-  Down(0, cx, cy);
-  Move(0, cx + 2, cy + 20);
-  ul = Frame(0.016);
-  Move(0, cx + 3, cy + 37);
-  ul |= Frame(0.016);
-  Up(0, cx + 3, cy + 37);
-  ul |= Frames(0.6);
-  CHECK(ul == IOSTOUCH_REQ_ZOOMOUT);
-  Down(0, cx, cy);
-  Move(0, cx, cy + 20);
-  Up(0, cx, cy + 20);
-  CHECK(Frames(0.6) == 0);
-  /* slid up: slow motion (near the top, as far as there is room, at least 16 pt) */
-  Down(0, cx, cy);
-  Move(0, cx, cy - 10);
-  CHECK(Frame(0.016) == 0);
-  Move(0, cx, cy - 17);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_SLOWMO);
-  Up(0, cx, cy - 17);
-  /* the slow-motion label shows, and a tap on it switches the speed */
+  /* slides (any way) do nothing now: no burst, no zoom-out, no slow motion; and no hold either */
+  const double adx[4] = { 15, -15, 0, 0 }, ady[4] = { 0, 0, 40, -20 };
+  for (int k = 0; k < 4; k++) {
+    Down(0, cx, cy);
+    Move(0, cx + adx[k], cy + ady[k]);
+    ul = Frames(0.8);
+    Up(0, cx + adx[k], cy + ady[k]);
+    ul |= Frame(0.016);
+    CHECK(ul == 0 && !K->bFreeze);
+  }
+  /* the slow-motion label shows while on; a tap on it asks for the next speed too */
+  char buf[16];
+  CHECK(!IOSTouchCore_IsShown(BTN_SLOWMO));
   _hud.iSlowMo = 2;
   SetHud();
-  char buf[16];
   CHECK(IOSTouchCore_IsShown(BTN_SLOWMO) && strcmp(IOSTouchCore_Label(BTN_SLOWMO, buf, sizeof(buf)), "\xC2\xBD\xC3\x97") == 0);
   Tap(BTN_SLOWMO);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_SLOWSPEED);
+  CHECK(Frame(0.016) == IOSTOUCH_REQ_SLOWMO);
   /* the follow arrow while following */
   CHECK(!IOSTouchCore_IsShown(BTN_FOLLOWNEXT));
   _hud.bFollowing = 1;
@@ -806,103 +783,6 @@ static void TestCamera(void)
   CHECK(IOSTouchCore_ButtonAt(cx, cy) != BTN_CAMERA);
 }
 
-/* ------------------------------------------------------------ autoplay */
-static void TestAutoplay(void)
-{
-  printf("autoplay\n");
-  Phone14();
-  IOSTouchCore_SetMode(IOSTOUCH_AUTOPLAY, _now);
-  for (int b = 0; b < BTN_COUNT; b++) CHECK(!IOSTouchCore_IsShown(b));
-  /* a single tap: nothing */
-  Down(0, 400, 200);
-  Frames(0.1);
-  Up(0, 400, 200);
-  CHECK(Frames(0.5) == 0);
-  /* a double tap: AUTONEXT */
-  Down(0, 400, 200);
-  Frames(0.1);
-  Up(0, 400, 200);
-  Frames(0.15);
-  Down(0, 405, 205);
-  Frames(0.1);
-  Up(0, 405, 205);
-  CHECK(Frame(0.016) == IOSTOUCH_REQ_AUTONEXT);
-  /* two taps too far apart in time: nothing */
-  Down(0, 400, 200); Frames(0.1); Up(0, 400, 200);
-  Frames(0.5);
-  Down(0, 400, 200); Frames(0.1); Up(0, 400, 200);
-  CHECK(Frames(0.1) == 0);
-  Frames(0.5);
-  /* long press 0.6 s: AUTOSTOP, once */
-  Down(0, 300, 100);
-  unsigned int ul = Frames(0.5);
-  CHECK(ul == 0 && K->fAutoRing > 0.75f && K->fAutoRing < 1.0f && K->fAutoX == 300 && K->fAutoY == 100);
-  ul = Frames(0.2);
-  CHECK(ul == IOSTOUCH_REQ_AUTOSTOP);
-  CHECK(K->fAutoRing == 0.0f); /* (done: the ring goes) */
-  ul = Frames(1.0);
-  Up(0, 300, 100);
-  ul |= Frames(0.1);
-  CHECK(ul == 0);
-  /* the game's hint shows in autoplay too */
-  IOSTouchCore_ShowMessage("Double tap: another level. Hold: stop.", 3.0, _now);
-  CHECK(IOSTouchCore_MessageShows(_now + 1.0) && !IOSTouchCore_MessageShows(_now + 3.5));
-  /* a press that moves: nothing; a touch on where FIRE would be: no input */
-  Down(0, 300, 100);
-  Move(0, 340, 100);
-  CHECK(Frames(1.0) == 0);
-  Up(0, 340, 100);
-  Down(1, BX(BTN_FIRE), BY(BTN_FIRE));
-  IOSTouchInput in = Read();
-  CHECK(in.ulButtons == 0 && !in.bAim);
-  Up(1, BX(BTN_FIRE), BY(BTN_FIRE));
-  CHECK(Frames(0.1) == 0);
-  /* hidden: nothing at all */
-  IOSTouchCore_SetMode(IOSTOUCH_HIDDEN, _now);
-  Down(0, 400, 200); Up(0, 400, 200); Down(0, 400, 200); Up(0, 400, 200);
-  CHECK(Frames(1.0) == 0);
-}
-
-/* ------------------------------------------------------------ tilt */
-static void TestGyro(void)
-{
-  printf("gyro\n");
-  Phone14();
-  IOSTouchCore_Settings()->iGyroMode = IOSTOUCH_GYRO_TOUCH;
-  CHECK(IOSTouchCore_GyroWanted());
-  /* no thumb down: TOUCH does nothing */
-  IOSTouchCore_GyroFrame(5.0, 1, _now); Frame(0.016);
-  IOSTouchCore_GyroFrame(5.0, 1, _now);
-  IOSTouchInput in = Read();
-  CHECK(in.fTurn == 0);
-  /* the stick down: turns the dude */
-  Down(1, 150, 250);
-  IOSTouchCore_GyroFrame(5.0, 1, _now); Frame(0.016); /* (the first frame counts for nothing) */
-  IOSTouchCore_GyroFrame(5.0, 1, _now);
-  in = Read();
-  CHECK(fabsf(in.fTurn - 7.5f) < 1e-4f);
-  /* aiming: turns the aim (counter-clockwise) */
-  Down(2, 500, 200);
-  Move(2, 540, 200);
-  IOSTouchCore_GyroFrame(90.0 / 1.5, 1, _now);
-  in = Read();
-  CHECK(in.bAim && fabsf(in.fAimX) < 1e-4f && fabsf(in.fAimY - 1.0f) < 1e-4f && in.fTurn == 0);
-  /* the screen turned round: held for 0.35 s */
-  IOSTouchCore_GyroFrame(10.0, -1, _now); Frame(0.016);
-  IOSTouchCore_GyroFrame(10.0, -1, _now);
-  in = Read();
-  CHECK(fabsf(in.fAimY - 1.0f) < 1e-4f);
-  Up(1, 0, 0); Up(2, 0, 0);
-  /* the filter: a steady turn comes through, a tiny one is damped */
-  IOSTouchGyroFilter f;
-  IOSTouchGyro_Reset(&f);
-  for (int i = 0; i <= 100; i++) IOSTouchGyro_Sample(&f, 1, 0, 0, 0.5, 0, 0, -1, i * 0.01); /* flat, 28.6 deg/s about up */
-  CHECK(f.fYaw > 25.0 && f.fYaw < 29.0);
-  IOSTouchGyro_Reset(&f);
-  for (int i = 0; i <= 100; i++) IOSTouchGyro_Sample(&f, 1, 0, 0, 0.005, 0, 0, -1, i * 0.01);
-  CHECK(fabs(f.fYaw) < 0.2);
-}
-
 int main(void)
 {
   TestLayout();
@@ -911,8 +791,6 @@ int main(void)
   TestTray();
   TestWheel();
   TestCamera();
-  TestAutoplay();
-  TestGyro();
   printf("%d passed, %d failed\n", _ctPass, _ctFail);
   return _ctFail ? 1 : 0;
 }

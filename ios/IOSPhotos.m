@@ -1,7 +1,7 @@
 /* POSTAL for iOS: the camera icon's photos. See IOSPhotos.h. Built with ARC.
    Ported from Serious Sam's ios/IOSPhotos.m (itself the Jedi Knight
    port's iosPhotos): Photos add-only, Documents/Screenshots as the fallback,
-   the flash, shutter and haptic, one message for a whole burst. */
+   the flash, shutter and haptic, one message once the saving is done. */
 
 #import <UIKit/UIKit.h>
 #import <Photos/Photos.h>
@@ -14,13 +14,11 @@
 #include "IOSTouch.h"
 
 /* IOSTouch.m */
-UIView *IOSTouch_OverlayView(void);
+void IOSTouch_DrawInfo(CGContextRef c, CGFloat w, CGFloat h);
 void IOSTouch_CameraFeedback(int bLight);
 
-/* Images waiting to be encoded and saved, at most (a full burst and a bit:
-   each is a screen's worth, ~8 MB on an iPhone 14 at 1038x480 x 4... more at
-   the screen's own pixels) */
-#define IOSPHOTOS_MAX_PENDING 14
+/* Images waiting to be encoded and saved, at most (each a screen's worth) */
+#define IOSPHOTOS_MAX_PENDING 6
 
 static dispatch_queue_t Queue(void)
 {
@@ -83,14 +81,14 @@ static NSString *BaseName(NSDate *when)
   return sameSecond > 1 ? [NSString stringWithFormat:@"%@-%d", base, sameSecond] : base;
 }
 
-/* The message, once nothing more is being saved and no burst is going
+/* The message, once nothing more is being saved
    (main thread) */
-static int _ctPending = 0, _bBatch = 0;
+static int _ctPending = 0;
 static int _ctToPhotos = 0, _ctToFiles = 0, _ctFailed = 0, _bPhotosOff = 0;
 
 static void Report(void)
 {
-  if (_ctPending > 0 || _bBatch) return;
+  if (_ctPending > 0) return;
   char msg[160];
   int n = 0;
   msg[0] = 0;
@@ -113,14 +111,6 @@ static void Finish(int toPhotos, int toFiles, int failed, int bPhotosOff)
     if (_ctPending > 0) _ctPending--;
     Report();
   });
-}
-
-void IOSPhotos_SetBatch(int bOn)
-{
-  bOn = bOn != 0;
-  if (bOn == _bBatch) return;
-  _bBatch = bOn;
-  Report();
 }
 
 int IOSPhotos_Pending(void) { return _ctPending; }
@@ -180,9 +170,8 @@ int IOSPhotos_Save(const unsigned char *pubRGBA, int w, int h, int iStride, cons
   @autoreleasepool {
     CGImageRef img = MakeImage(p, w, h); /* (frees p) */
     if (!img) return 0;
-    if (iFlags & IOSPHOTOS_ADD_OVERLAY) {
-      /* the touch overlay on top, as the player sees it (UIKit's views aren't in SDL's frame) */
-      UIView *overlay = IOSTouch_OverlayView();
+    if (iFlags & IOSPHOTOS_ADD_INFO) {
+      /* the overlay's game info on top, as the player sees it (UIKit's views aren't in SDL's frame) */
       UIGraphicsImageRendererFormat *fmt = [UIGraphicsImageRendererFormat preferredFormat];
       fmt.scale = 1.0;
       fmt.opaque = YES;
@@ -191,20 +180,15 @@ int IOSPhotos_Save(const unsigned char *pubRGBA, int w, int h, int iStride, cons
       UIImage *out = [r imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
         CGContextRef c = ctx.CGContext;
         [[UIImage imageWithCGImage:img] drawInRect:CGRectMake(0, 0, w, h)];
-        if (overlay && !overlay.hidden && overlay.bounds.size.width > 0 && overlay.bounds.size.height > 0) {
-          CGContextSaveGState(c);
-          CGContextScaleCTM(c, w / overlay.bounds.size.width, h / overlay.bounds.size.height);
-          [overlay.layer renderInContext:c];
-          CGContextRestoreGState(c);
-        }
+        IOSTouch_DrawInfo(c, w, h);
       }];
-      CGImageRef withButtons = out.CGImage ? CGImageRetain(out.CGImage) : NULL;
+      CGImageRef withInfo = out.CGImage ? CGImageRetain(out.CGImage) : NULL;
       CGImageRelease(img);
-      img = withButtons;
+      img = withInfo;
       if (!img) return 0;
     }
     /* the frame is taken: now the flash, the shutter and a tap */
-    IOSTouch_CameraFeedback((iFlags & IOSPHOTOS_LIGHT) != 0);
+    IOSTouch_CameraFeedback(0);
     NSDate *when = [NSDate date];
     NSString *name = [NSString stringWithFormat:@"%@ %s.png", BaseName(when), (pszKind && pszKind[0]) ? pszKind : "photo"];
     _ctPending++;

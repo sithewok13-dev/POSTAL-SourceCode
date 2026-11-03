@@ -5,7 +5,7 @@
    The overlay (IOSTouch.m) only turns touches into the plain values below.
    The game side (IOSGame.cpp) reads them and acts on POSTAL: the dude's
    movement and facing, its input bits, the menus, saving and loading, the
-   cheat, the camera and autoplay.
+   cheat and the camera.
 
    Threads: everything here runs on the main thread (POSTAL is single
    threaded: its game loop runs on the main thread, between SDL event pumps). */
@@ -19,7 +19,6 @@ extern "C" {
 enum {
   IOSTOUCH_HIDDEN = 0, /* menus, cutscenes, loading: no overlay, touches are SDL mouse clicks */
   IOSTOUCH_GAMEPLAY,   /* a level is being played */
-  IOSTOUCH_AUTOPLAY,   /* autoplay: no buttons; a double tap = new level, a long press = stop */
 };
 
 /* What the HUD and game state are, for the overlay's layout and context buttons.
@@ -54,21 +53,17 @@ enum {
   IOSTOUCH_REQ_QUICKLOAD   = 1 << 4,  /* LOAD held 0.3 s */
   IOSTOUCH_REQ_CHEAT       = 1 << 5,  /* toggle the cheat (tray or the cheat icon); the game plays the sound */
   IOSTOUCH_REQ_LEVEL       = 1 << 6,  /* tray LEVEL (cheat on): the level select with every level open */
-  IOSTOUCH_REQ_AUTOPLAY    = 1 << 7,  /* tray AUTOPLAY: start autoplay */
-  IOSTOUCH_REQ_AUTONEXT    = 1 << 8,  /* autoplay: double tap, another random level */
-  IOSTOUCH_REQ_AUTOSTOP    = 1 << 9,  /* autoplay: long press, back to the menu */
+  /* (1 << 7, 8, 9: were autoplay's) */
   IOSTOUCH_REQ_KEYBOARD    = 1 << 10, /* tray keyboard: type one of POSTAL's cheat words */
   IOSTOUCH_REQ_FOLLOW      = 1 << 11, /* tray FOLLOW: follow cam on/off */
   IOSTOUCH_REQ_FOLLOWNEXT  = 1 << 12, /* the arrow by the camera icon: follow the next person */
-  IOSTOUCH_REQ_SLOWMO      = 1 << 13, /* camera slid up: slow motion on/off */
-  IOSTOUCH_REQ_SLOWSPEED   = 1 << 14, /* the slow-motion label tapped: 1/2 <-> 1/4 */
-  IOSTOUCH_REQ_PHOTO       = 1 << 15, /* camera tap: a photo (IOSCapture) */
-  IOSTOUCH_REQ_BURST       = 1 << 16, /* camera slid sideways: one burst photo now; asked again every
-                                         0.2 s while the finger stays down, 10 at most (game: like PHOTO,
-                                         clean only, named "burst NN") */
-  IOSTOUCH_REQ_FREEZE      = 1 << 17, /* camera held: freeze and pan (IOSTouchInput.fPanX/Y; a camera tap
+  IOSTOUCH_REQ_SLOWMO      = 1 << 13, /* tray SLOW (or the slow-motion label): off -> 1/2 -> 1/4 -> off */
+  /* (1 << 14: was the slow-motion speed) */
+  IOSTOUCH_REQ_PHOTO       = 1 << 15, /* camera tap (or, frozen, a still tap on the view): a screenshot */
+  /* (1 << 16: was the burst) */
+  IOSTOUCH_REQ_FREEZE      = 1 << 17, /* camera held 0.5 s: freeze and pan (IOSTouchInput.fPanX/Y; a tap
                                          asks PHOTO; the game holds still: IOSTouch_HoldsGame) */
-  IOSTOUCH_REQ_ZOOMOUT     = 1 << 18, /* camera slid down: a zoomed-out photo */
+  /* (1 << 18: was the zoom-out shot) */
   IOSTOUCH_REQ_UNFREEZE    = 1 << 19, /* freeze ended (its X, or any mode change): back to the game */
 };
 /* IOSTOUCH_REQ_LEVEL is informational: the overlay has opened its own level
@@ -91,8 +86,6 @@ typedef struct IOSTouchInput {
   unsigned int ulButtons; /* IOSTOUCH_* */
   int   iSelectWeapon;    /* 0 none, else 1 + the weapon type the wheel picked (one frame) */
   float fPanX, fPanY;     /* freeze and pan: view drag since the last read, in screen points */
-  float fTurn;            /* tilt aiming while not aiming with a thumb: degrees to turn the dude since the
-                             last read, + = counter-clockwise on screen (while aiming, tilt turns fAimX/Y) */
 } IOSTouchInput;
 
 /* The weapon wheel: what the dude has (the game tells the overlay every frame) */
@@ -120,13 +113,6 @@ void IOSTouch_ShowMessage(const char *pszText, double fSeconds);
 void IOSTouch_SetLevels(const char *const *ppszNames, int ctLevels);
 int  IOSTouch_TakeLevelPick(void);
 
-/* What a PHOTO request should save (the tray CAMERA's PHOTO options, held): IOSTOUCH_PHOTO_* bits, never 0.
-   BURST, ZOOMOUT and freeze photos are clean only. HUDBTNS: hand IOSPhotos the HUD frame with
-   IOSPHOTOS_ADD_OVERLAY and it draws the buttons on. */
-#define IOSTOUCH_PHOTO_CLEAN   1
-#define IOSTOUCH_PHOTO_HUD     2
-#define IOSTOUCH_PHOTO_HUDBTNS 4
-int  IOSTouch_PhotoKinds(void);
 
 #ifdef __cplusplus
 }
