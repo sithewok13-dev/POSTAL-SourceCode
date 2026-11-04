@@ -1227,6 +1227,11 @@ static int16_t SetupDlg(		// Returns 0 on success.
 						( (REdit*)ms_pguiChatText)->m_sMaxText	= Net::MaxChatSize - 1;
 						}
 
+#ifdef POSTAL_RIG
+					// Test rig only: start with co-op levels and co-op mode on
+					if (getenv("RIG_COOP"))
+						ms_bCoopLevels = ms_bCoopMode = true;
+#endif
 					// If exists . . .
 					if (ms_pmbCoopLevels)
 						{
@@ -1605,7 +1610,7 @@ static int16_t UpdateListBox(					// Returns 0 on success.
 		while (phostslistDropped->GetHead())
 			{
 			// Get pointer to first host in list
-			U32 u32User = phostslistDropped->GetHeadData().m_u32User;
+			uintptr_t u32User = phostslistDropped->GetHeadData().m_u32User;
 
 			// We should have already been using this.
 			ASSERT(u32User);

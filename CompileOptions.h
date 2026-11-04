@@ -481,7 +481,9 @@
 			//#define START_MENU_ADDON_ITEM
 		#endif
 	#elif TARGET == POSTAL_2015
+		#if !defined(POSTAL_RIG)	// Added: iOS: the Linux test rig tries network play
 		#define MULTIPLAYER_REMOVED
+		#endif
 		#define EDITOR_REMOVED
 		//#define LOADLEVEL_REMOVED
 		#define START_MENU_ADDON_ITEM
@@ -491,7 +493,9 @@
 // Turn off multiplayer on MacOSX/Linux...not worth it.  --ryan.
 //  This just takes it out of the menus...code is still compiled in.
 #if 1 //PLATFORM_UNIX
+    #if !defined(POSTAL_RIG)	// Added: iOS: the Linux test rig tries network play
     #define MULTIPLAYER_REMOVED
+    #endif
 	#define EDITOR_REMOVED
     //#define LOADLEVEL_REMOVED  // bleh, no file dialog thingey.  :/
 #endif

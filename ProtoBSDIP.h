@@ -40,7 +40,12 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>   // TCP_NODELAY
 #include <arpa/inet.h>
+#include <poll.h>
+#include <signal.h>
+#include <string.h>
+#include <sys/resource.h>  // getrlimit() for GetMaxSockets()
 #include <netdb.h>
 #include <sys/uio.h>
 #include <sys/ioctl.h>
