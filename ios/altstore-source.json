@@ -1,0 +1,69 @@
+{
+  "name": "POSTAL for iOS (unofficial)",
+  "identifier": "io.github.sithewok13-dev.postal-ios",
+  "subtitle": "POSTAL on iPhone, with touch controls",
+  "description": "An unofficial fan port of POSTAL, from the source code Running With Scissors released, to iPhone, with touch controls.\n\nYou need your own copy of POSTAL: Classic and Uncut (GOG or Steam). No game files are included.\n\nIt's a beta. Guide and bug reports: https://github.com/sithewok13-dev/POSTAL-SourceCode\n\nNot affiliated with or endorsed by Running With Scissors.",
+  "iconURL": "https://raw.githubusercontent.com/sithewok13-dev/POSTAL-SourceCode/ios/ios/icon.png",
+  "website": "https://github.com/sithewok13-dev/POSTAL-SourceCode",
+  "tintColor": "#b3261e",
+  "apps": [
+    {
+      "name": "POSTAL",
+      "bundleIdentifier": "io.github.sithewok13.postal",
+      "developerName": "sithewok13-dev",
+      "subtitle": "The 1997 isometric shooter, with touch controls",
+      "localizedDescription": "An unofficial fan port of POSTAL (1997), the isometric shooter from Running With Scissors, to iPhone, built from the source code they released, with touch controls made for it.\n\n- Twin-stick touch controls: move with your left thumb, aim and fire with your right\n- POSTAL's own wider view fills the screen\n- Weapon wheel with the game's own icons and ammo\n- Quick save and quick load\n- A cheat button: can't die, every weapon, endless ammo, the secret Deathwad\n- Jump to any of the 22 levels, Special Delivery and Super Postal included\n- Slow motion and a follow cam\n- Screenshots straight to Photos\n\nYou need your own copy of POSTAL: Classic and Uncut (GOG or Steam); no game files are included. Open the app once, then copy the game's res folder into Files > On My iPhone > POSTAL.\n\nIt's a beta: expect bugs, and back up your saves. Multiplayer isn't in the app yet.\n\nGuide and bug reports: https://github.com/sithewok13-dev/POSTAL-SourceCode\n\nNot affiliated with or endorsed by Running With Scissors.",
+      "iconURL": "https://raw.githubusercontent.com/sithewok13-dev/POSTAL-SourceCode/ios/ios/icon.png",
+      "tintColor": "#b3261e",
+      "category": "games",
+      "screenshots": [
+        {
+          "imageURL": "https://raw.githubusercontent.com/sithewok13-dev/POSTAL-SourceCode/ios/docs/ios/screenshots/tokyo-flamethrower-touch.jpg",
+          "width": 1600,
+          "height": 739
+        },
+        {
+          "imageURL": "https://raw.githubusercontent.com/sithewok13-dev/POSTAL-SourceCode/ios/docs/ios/screenshots/weapon-wheel.jpg",
+          "width": 1600,
+          "height": 739
+        },
+        {
+          "imageURL": "https://raw.githubusercontent.com/sithewok13-dev/POSTAL-SourceCode/ios/docs/ios/screenshots/truckstop-fire.jpg",
+          "width": 1600,
+          "height": 740
+        },
+        {
+          "imageURL": "https://raw.githubusercontent.com/sithewok13-dev/POSTAL-SourceCode/ios/docs/ios/screenshots/city-explosion.jpg",
+          "width": 1600,
+          "height": 740
+        }
+      ],
+      "versions": [
+        {
+          "version": "0.1.35",
+          "buildVersion": "35",
+          "marketingVersion": "ios-latest",
+          "date": "2026-11-03T23:22:30Z",
+          "localizedDescription": "The newest test build (run 35), before the first numbered release. It may not have been tried yet.\n\nTest builds: https://github.com/sithewok13-dev/POSTAL-SourceCode/releases/tag/ios-latest",
+          "downloadURL": "https://github.com/sithewok13-dev/POSTAL-SourceCode/releases/download/ios-latest/postal-ios.ipa",
+          "size": 1182633,
+          "sha256": "aa7e0a8fb61145dd954e354ac30ae7effbb6b639f9033fae109593b25e549c64",
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSMotionUsageDescription": "Turning the device aims, while tilt aiming is on (hold MENU to set it).",
+          "NSPhotoLibraryAddUsageDescription": "CAMERA saves your photos of the game to your photo library."
+        }
+      },
+      "version": "0.1.35",
+      "versionDate": "2026-11-03T23:22:30Z",
+      "versionDescription": "The newest test build (run 35), before the first numbered release. It may not have been tried yet.\n\nTest builds: https://github.com/sithewok13-dev/POSTAL-SourceCode/releases/tag/ios-latest",
+      "downloadURL": "https://github.com/sithewok13-dev/POSTAL-SourceCode/releases/download/ios-latest/postal-ios.ipa",
+      "size": 1182633
+    }
+  ],
+  "news": []
+}

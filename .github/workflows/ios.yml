@@ -4,7 +4,13 @@ name: iOS
 # res folder of your own POSTAL: Classic and Uncut into Files > On My iPhone > POSTAL).
 # Pushes to "ios" update the ios-latest release; pushes to "ios-dev" only build
 # (a compile check for work in progress). A manual run with "release" publishes
-# that tag.
+# that tag:
+#   gh workflow run ios.yml --ref ios -f release=ios-v0.1
+# It stops before building unless ios/RELEASE_NOTES.md has the exact line
+# "### What's in <tag>", creates the tag at the commit it built, attaches only
+# the .ipa files in RELEASE_IPAS, and then adds the release to the AltStore /
+# SideStore source (ios/altstore-source.json on branch ios; see the last step).
+# Every run checks that the .ipa holds no game data.
 
 on:
   push:
@@ -123,6 +129,29 @@ jobs:
         (cd ipa && zip -qry ../postal-ios.ipa Payload)
         ls -la *.ipa
 
+    # No game data in the .ipa, ever. Only these may be in the app: the game
+    # (POSTAL), Info.plist, PkgInfo, the icons, _CodeSignature/ and the app's
+    # own POSTAL.INI (ios/POSTAL.INI, byte for byte). Anything else fails the
+    # run, and so does any of the game's own files (res/, .sak, levels,
+    # sounds, pictures, saves) anywhere in it.
+    - name: Check the .ipa has no game data
+      run: |
+        set -e
+        APPDIR='Payload/POSTAL\.app'
+        ENTRIES=$(unzip -Z1 postal-ios.ipa | grep -v '/$')
+        BAD=$(echo "$ENTRIES" | grep -vE "^${APPDIR}/(POSTAL|Info\.plist|PkgInfo|POSTAL\.INI|AppIcon[^/]*\.png|_CodeSignature/[^/]+)$" || true)
+        GAME=$(echo "$ENTRIES" | grep -iE '(^|/)res/|\.(sak|rlm|hoo|wav|mp3|ogg|bmp|fnt|anm|sav|gme|mpl|rsp|snd)$' || true)
+        mkdir -p ini-check
+        unzip -o -q postal-ios.ipa 'Payload/POSTAL.app/POSTAL.INI' -d ini-check
+        INI=$(cmp -s ini-check/Payload/POSTAL.app/POSTAL.INI ios/POSTAL.INI || echo "POSTAL.INI differs from ios/POSTAL.INI")
+        if [ -n "$BAD$GAME$INI" ]; then
+          [ -n "$BAD" ] && echo "::error::Files in the .ipa that aren't allowed:" && echo "$BAD"
+          [ -n "$GAME" ] && echo "::error::Game files in the .ipa:" && echo "$GAME"
+          [ -n "$INI" ] && echo "::error::$INI"
+          exit 1
+        fi
+        echo "No game data: $(echo "$ENTRIES" | wc -l | tr -d ' ') files, all allowed."
+
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
@@ -143,7 +172,9 @@ jobs:
       if: env.RELEASE_TAG != ''
       uses: actions/checkout@v4
       with:
-        sparse-checkout: ios/RELEASE_NOTES.md
+        sparse-checkout: |
+          ios/RELEASE_NOTES.md
+          ios/update_altstore_source.py
         sparse-checkout-cone-mode: false
         persist-credentials: false
 
@@ -212,3 +243,51 @@ jobs:
         make_latest: ${{ steps.rel.outputs.latest }}
         files: release/*.ipa
         fail_on_unmatched_files: true
+
+    # The AltStore / SideStore source (ios/altstore-source.json, read from
+    # branch ios by the README's raw link) gets the release just published:
+    # its size, SHA-256, date, download link and the "What's in" list as a
+    # summary (ios/update_altstore_source.py); the ios-latest entry the source
+    # started with goes. Committed to ios by GITHUB_TOKEN, marked [skip ci]
+    # (a GITHUB_TOKEN push starts no run anyway), so ios-latest isn't rebuilt.
+    # continue-on-error: if this fails, the release (already out) still counts.
+    - name: Add the release to the AltStore / SideStore source
+      if: env.RELEASE_TAG != ''
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SOURCE_BRANCH: ios
+      run: |
+        set -euo pipefail
+        trap 'echo "::warning::The AltStore / SideStore source was not updated for ${RELEASE_TAG}. The release itself is published; add it to ios/altstore-source.json by hand."' ERR
+        SRC="$RUNNER_TEMP/altstore-source"
+        rm -rf "$SRC"
+        git clone --quiet --depth 1 --branch "$SOURCE_BRANCH" \
+          "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$SRC"
+        git -C "$SRC" config user.name "github-actions[bot]"
+        git -C "$SRC" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        for attempt in 1 2 3; do
+          # The script and the notes come from the commit just built; the
+          # source file from the newest ios branch
+          ARGS=()
+          for ipa in $RELEASE_IPAS; do ARGS+=(--ipa "release/$ipa"); done
+          python3 -I ios/update_altstore_source.py \
+            --source "$SRC/ios/altstore-source.json" \
+            --tag "$RELEASE_TAG" --notes ios/RELEASE_NOTES.md "${ARGS[@]}"
+          if git -C "$SRC" diff --quiet; then
+            echo "The source already has ${RELEASE_TAG}"
+            break
+          fi
+          git -C "$SRC" commit --quiet -am "iOS: add ${RELEASE_TAG} to the AltStore / SideStore source [skip ci]"
+          if git -C "$SRC" push --quiet origin "HEAD:${SOURCE_BRANCH}"; then
+            echo "Added ${RELEASE_TAG} to the source on ${SOURCE_BRANCH}"
+            break
+          fi
+          if [ "$attempt" = 3 ]; then
+            echo "::warning::Couldn't push the AltStore / SideStore source update after 3 tries."
+            exit 1
+          fi
+          # Someone pushed to ios meanwhile: start again from the newest
+          git -C "$SRC" fetch --quiet --depth 1 origin "$SOURCE_BRANCH"
+          git -C "$SRC" reset --quiet --hard FETCH_HEAD
+        done
