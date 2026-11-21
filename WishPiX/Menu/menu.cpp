@@ -567,6 +567,26 @@ extern int16_t StartMenu(				// Returns 0 on success.
 
 		ms_sCancel	= FALSE;
 
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+		// Added: iOS: a phone has no Escape key. Where the cancel item (the one Escape
+		// picks) is a blank, disabled spacer, show it as a BACK item to tap instead.
+		{
+		int16_t sCount = 0;
+		while (sCount < (int16_t)(NUM_ELEMENTS(pmenu->ami) - 1) && pmenu->ami[sCount].pszText != NULL)
+			sCount++;
+		int16_t sCancel = pmenu->menuautoitems.sCancelItem;
+		if (sCancel < 0)
+			sCancel += sCount;
+		if (sCancel >= 0 && sCancel < sCount && pmenu->ami[sCancel].pszText[0] == '\0'
+			&& pmenu->ami[sCancel].pmenu == NULL && pmenu->ami[sCancel].pgui == NULL)
+			{
+			static char szBack[] = "BACK";
+			pmenu->ami[sCancel].pszText	= szBack;
+			pmenu->ami[sCancel].sEnabled	= TRUE;
+			}
+		}
+#endif
+
 		// Get info on composite buffer.
 		RImage*	pimComposite	= NULL;
 

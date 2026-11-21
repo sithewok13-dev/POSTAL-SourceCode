@@ -14,8 +14,7 @@
 #include "IOSTouch.h"
 #include "camera.h"
 #include "hood.h"
-#include "menus.h"	// (menuMain; WishPiX menu.h: GetCurrentMenu)
-#include "SDL.h"	// (BACK: an Escape key event)
+#include "SDL.h"	// (SDL_GetTicks)
 #if PLATFORM_IOS
 #include "IOSPhotos.h"
 #endif
@@ -564,11 +563,8 @@ void IOSGame_Present(void* pSDLWindow)
 		s_prealm = NULL;
 		s_pdude = NULL;
 		}
-	// Out of play, one of the game's menus (not the title menu, where Escape would
-	// only offer to quit): the BACK button, as Escape
-	Menu* pmenu = bPlaying ? NULL : GetCurrentMenu();
-	bool bMenu = pmenu != NULL && pmenu != &menuMain;
-	int iMode = bPlaying ? IOSTOUCH_GAMEPLAY : (bMenu ? IOSTOUCH_MENU : IOSTOUCH_HIDDEN);
+	// (Out of play the game's menus go back with their own BACK item: WishPiX/Menu/menu.cpp)
+	int iMode = bPlaying ? IOSTOUCH_GAMEPLAY : IOSTOUCH_HIDDEN;
 
 	if (!s_bLevelsSent && bPlaying)
 		{
@@ -602,21 +598,6 @@ void IOSGame_Present(void* pSDLWindow)
 	static unsigned s_uDrawn = 0;
 	unsigned req = IOSTouch_Update(pSDLWindow, iMode, &hud, ++s_uDrawn);
 	IOSTouch_ReadInput(&s_in);
-	if (bMenu && (req & IOSTOUCH_REQ_BACK))
-		{
-		// An Escape key press, into SDL's queue: the game takes it in order with the
-		// taps, and as on PC (a controls screen waiting for a key ends its wait on it)
-		SDL_Event ev;
-		memset(&ev, 0, sizeof(ev));
-		ev.type = SDL_KEYDOWN;
-		ev.key.state = SDL_PRESSED;
-		ev.key.keysym.sym = SDLK_ESCAPE;
-		ev.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
-		SDL_PushEvent(&ev);
-		ev.type = SDL_KEYUP;
-		ev.key.state = SDL_RELEASED;
-		SDL_PushEvent(&ev);
-		}
 	if (!bPlaying)
 		{
 		// Out of play (menus, cutscenes, loading) the buttons can't ask for

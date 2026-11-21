@@ -699,21 +699,27 @@ void RScrollBar::Do(	// Returns nothing.
 	{
 		TRACE("Mouse scrollbar %d  %d  %d", pie->sPosX , pie->sPosY, pie->sButtons);
 
-		if ( pie->sButtons)
+		int16_t	sX, sY, sTrayX, sTrayY;
+		sX =  pie->sPosX;
+		sY =  pie->sPosY;
+		//rspGetMouse(&sX, &sY, NULL);
+		TopPosToChild(&sX, &sY);
+		// Added: iOS: only a touch on this bar moves it (the Android code took any touch
+		// on the screen, so a tap anywhere else in the menu set the slider to that spot)
+		const int16_t sSlop = 6;
+		if (sX >= -sSlop && sY >= -sSlop && sX < m_im.m_sWidth + sSlop && sY < m_im.m_sHeight + sSlop)
 		{
-			int16_t	sX, sY, sTrayX, sTrayY;
-			sX =  pie->sPosX;
-			sY =  pie->sPosY;
-			//rspGetMouse(&sX, &sY, NULL);
-			TopPosToChild(&sX, &sY);
-			GetTray(&sTrayX, &sTrayY, NULL, NULL);
-			sX	-= + sTrayX;
-			//sX	+= (800-640);
-			//sY	-= m_sClickOffsetY + sTrayY;
+			if ( pie->sButtons)
+			{
+				GetTray(&sTrayX, &sTrayY, NULL, NULL);
+				sX	-= + sTrayX;
+				//sX	+= (800-640);
+				//sY	-= m_sClickOffsetY + sTrayY;
 
-			SetPos(PIXELS2POS(sX, sY) );
+				SetPos(PIXELS2POS(sX, sY) );
+			}
+			pie->sUsed	= TRUE;
 		}
-		pie->sUsed	= TRUE;
 	}
 #endif
 
