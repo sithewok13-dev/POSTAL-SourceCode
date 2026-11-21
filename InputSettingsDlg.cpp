@@ -503,6 +503,19 @@ inline void ListenForInput(	// Returns nothing.
 			pie->sUsed	= TRUE;
 
 			break;
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+		// Added: iOS: a phone has no Escape key: a new tap stops the wait, as Escape
+		// does (the tap that started it was used by the menu; a tap is no key, mouse
+		// button or controller button to bind)
+		case RInputEvent::Mouse:
+			if (pie->sUsed == FALSE && pie->sEvent == RSP_MB0_PRESSED)
+				{
+				ms_bListenForInput	= false;
+				bAffirmitiveFeedback	= false;
+				pie->sUsed	= TRUE;
+				}
+			break;
+#endif
 		}
 
 	// If still listening . . .

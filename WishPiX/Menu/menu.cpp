@@ -242,6 +242,9 @@ static int16_t		ms_asMenuItemMouseHeight[MAX_MENU_ITEMS];	// Array of item heigh
 static int16_t		ms_sItemsPerColumn;			// Number of items per column
 
 static int16_t		ms_sCancel			= FALSE;	// TRUE to cancel current menu.
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+char				g_szMenuBack[]	= "BACK";	// Added: iOS: the BACK item's text (menu.h)
+#endif
 
 static int16_t		ms_sItemsX			= 0;		// X position of menu items.
 static int16_t		ms_sItemsY			= 0;		// Y position of menu items.
@@ -567,25 +570,6 @@ extern int16_t StartMenu(				// Returns 0 on success.
 
 		ms_sCancel	= FALSE;
 
-#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
-		// Added: iOS: a phone has no Escape key. Where the cancel item (the one Escape
-		// picks) is a blank, disabled spacer, show it as a BACK item to tap instead.
-		{
-		int16_t sCount = 0;
-		while (sCount < (int16_t)(NUM_ELEMENTS(pmenu->ami) - 1) && pmenu->ami[sCount].pszText != NULL)
-			sCount++;
-		int16_t sCancel = pmenu->menuautoitems.sCancelItem;
-		if (sCancel < 0)
-			sCancel += sCount;
-		if (sCancel >= 0 && sCancel < sCount && pmenu->ami[sCancel].pszText[0] == '\0'
-			&& pmenu->ami[sCancel].pmenu == NULL && pmenu->ami[sCancel].pgui == NULL)
-			{
-			static char szBack[] = "BACK";
-			pmenu->ami[sCancel].pszText	= szBack;
-			pmenu->ami[sCancel].sEnabled	= TRUE;
-			}
-		}
-#endif
 
 		// Get info on composite buffer.
 		RImage*	pimComposite	= NULL;
@@ -607,6 +591,41 @@ extern int16_t StartMenu(				// Returns 0 on success.
 				ms_sCancel	= TRUE;
 				}
 			}
+
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+		// Added: iOS: a phone has no Escape key, so every menu gets a BACK item that
+		// does what Escape does (picks the cancel item). After fnInit: some menus build
+		// their items there. Where the cancel item is a blank, disabled spacer, it
+		// becomes BACK; where it is the slot just past the last item (the Mixer, the
+		// key/mouse/controller setups, the save-slot list), BACK is added there.
+		{
+		const int16_t sMax = (int16_t)(NUM_ELEMENTS(pmenu->ami) - 1);
+		int16_t sCount = 0;
+		while (sCount < sMax && pmenu->ami[sCount].pszText != NULL)
+			sCount++;
+		int16_t sCancel = pmenu->menuautoitems.sCancelItem;
+		if (sCancel < 0)
+			sCancel += sCount;
+		if (sCancel >= 0 && sCancel < sCount)
+			{
+			if (pmenu->ami[sCancel].pszText[0] == '\0'
+				&& pmenu->ami[sCancel].pmenu == NULL && pmenu->ami[sCancel].pgui == NULL)
+				{
+				pmenu->ami[sCancel].pszText	= g_szMenuBack;
+				pmenu->ami[sCancel].sEnabled	= TRUE;
+				}
+			}
+		else if (sCancel >= sCount && sCount + 1 < sMax)
+			{
+			pmenu->ami[sCount].pszText		= g_szMenuBack;
+			pmenu->ami[sCount].sEnabled	= TRUE;
+			pmenu->ami[sCount].pmenu		= NULL;
+			pmenu->ami[sCount].pgui		= NULL;
+			pmenu->ami[sCount + 1].pszText	= NULL;
+			pmenu->menuautoitems.sCancelItem	= sCount;
+			}
+		}
+#endif
 
 		ASSERT(presmgr != NULL);
 		// Store pointer to desired res mgr.

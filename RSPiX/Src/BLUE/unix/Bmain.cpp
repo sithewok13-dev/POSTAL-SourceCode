@@ -148,6 +148,39 @@ extern void rspDoSystem(void)										// Returns nothing.
                     Key_Event(&event);
                     break;
 
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+                // Added: iOS: a phone has no Escape key: a two-finger tap is one.
+                // Outside a level only: in play the touch controls take every touch,
+                // so SDL never sees these there.
+                case SDL_FINGERDOWN:
+                case SDL_FINGERUP:
+                    {
+                    static int s_ctFingers = 0;
+                    static bool s_bEscaped = false;
+                    if (event.type == SDL_FINGERDOWN)
+                        s_ctFingers++;
+                    else if (s_ctFingers > 0)
+                        s_ctFingers--;
+                    if (s_ctFingers == 0)
+                        s_bEscaped = false;
+                    else if (s_ctFingers >= 2 && !s_bEscaped)
+                        {
+                        s_bEscaped = true;
+                        SDL_Event ev;
+                        SDL_zero(ev);
+                        ev.type = SDL_KEYDOWN;
+                        ev.key.state = SDL_PRESSED;
+                        ev.key.keysym.sym = SDLK_ESCAPE;
+                        ev.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+                        Key_Event(&ev);
+                        ev.type = SDL_KEYUP;
+                        ev.key.state = SDL_RELEASED;
+                        Key_Event(&ev);
+                        }
+                    }
+                    break;
+#endif
+
 //                case SDL_ACTIVEEVENT:
 //                    if (event.active.state & SDL_APPINPUTFOCUS)
 //                        GSDLAppIsActive = (event.active.gain != 0);

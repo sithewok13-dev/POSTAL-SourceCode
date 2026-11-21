@@ -6233,6 +6233,10 @@ static bool PickFileMenuChoice(Menu *pmenuCurrent, int16_t sMenuItem)
 
 	PlaySample(g_smidMenuItemSelect, SampleMaster::UserFeedBack);
     g_PickFileMenuChoice = (const char *) pmenuCurrent->ami[sMenuItem].pszText;
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+    if (g_PickFileMenuChoice == g_szMenuBack)
+        g_PickFileMenuChoice = NULL;  // Added: iOS: BACK, as Escape: no file
+#endif
     g_PickFileMenuDone = true;  // break loop in PickFile().
     return true;  // accept choice.
 }
@@ -6283,6 +6287,9 @@ int16_t PickFile(const char *title, void (*enumer)(Menu *), char *buf, size_t bu
     TRACE("PickFile: Going with %s.\n", buf);
 
     for (int i = 0; (i < Max) && (g_menuPickFile.ami[i].pszText); i++)
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+        if (g_menuPickFile.ami[i].pszText != g_szMenuBack)  // Added: iOS: not allocated
+#endif
         free(g_menuPickFile.ami[i].pszText);
 
     // put the old menu back.

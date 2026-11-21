@@ -329,6 +329,12 @@ extern void DoMenuInput(	// Returns nothing.
 extern void DoMenuOutput(	// Returns nothing.
 	RImage*	pimDst);			// In:  Destination image for menu BLiTs.
 
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+// Added: iOS: the text of the BACK item StartMenu gives every menu (a phone has no
+// Escape key). Not allocated: a menu that frees its items' text must skip it.
+extern char g_szMenuBack[];
+#endif
+
 // Get the current menu.
 extern Menu* GetCurrentMenu(void);	// Returns a pointer to the current
 												// menu or NULL if there is none.
