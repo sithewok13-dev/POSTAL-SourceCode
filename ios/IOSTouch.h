@@ -45,6 +45,9 @@ typedef struct IOSTouchHud {
   const char *pszWeapon; /* name of the weapon in hand, or NULL */
   int   bDead;           /* the dude is dead: the game restarts the level on FIRE */
   int   bCanExecute;     /* EXECUTE would do something now (someone writhing in reach, the machine gun owned) */
+  int   bCrosshair;      /* the crosshair shows (in play, alive, not following someone else) */
+  float fCrossX, fCrossY;/* where his shots go, as fractions of the screen (0..1, left/top 0) */
+  int   bFiring;         /* FIRE is held (the crosshair turns red) */
 } IOSTouchHud;
 
 /* What the player asked for (IOSTouch_Update's result), done by the game side */

@@ -689,6 +689,62 @@ static void TestWheelCount(void)
   CHECK(Read().iSelectWeapon == 0);
 }
 
+/* ------------------------------------------------------------ the crosshair */
+static void TestCrosshair(void)
+{
+  printf("crosshair\n");
+  Phone14();
+  double x = -1, y = -1;
+  CHECK(!IOSTouchCore_CrosshairShows(&x, &y)); /* (the game hasn't said) */
+  _hud.bCrosshair = 1;
+  _hud.fCrossX = 0.25f;
+  _hud.fCrossY = 0.5f;
+  SetHud();
+  CHECK(IOSTouchCore_CrosshairShows(&x, &y) && fabs(x - 211) < 1e-4 && fabs(y - 195) < 1e-4);
+  _hud.fCrossX = 0.75f; /* (it follows the game every frame) */
+  SetHud();
+  CHECK(IOSTouchCore_CrosshairShows(&x, &y) && fabs(x - 633) < 1e-4);
+  _hud.fCrossX = 1.5f; /* off the screen */
+  SetHud();
+  CHECK(!IOSTouchCore_CrosshairShows(NULL, NULL));
+  _hud.fCrossX = 0.5f;
+  SetHud();
+  /* the wheel open: hidden; closed: back */
+  IOSTouchWeapons w = WeaponsN(13);
+  IOSTouchCore_SetWeapons(&w);
+  Down(0, BX(BTN_NEXTWPN), BY(BTN_NEXTWPN));
+  Move(0, BX(BTN_NEXTWPN) + 15, BY(BTN_NEXTWPN) + 15);
+  CHECK(K->bWheelOpen && !IOSTouchCore_CrosshairShows(NULL, NULL));
+  Up(0, BX(BTN_NEXTWPN), BY(BTN_NEXTWPN));
+  CHECK(!K->bWheelOpen && IOSTouchCore_CrosshairShows(NULL, NULL));
+  /* the level list open: hidden */
+  IOSTouchCore_SetLevels((const char *const[]){ "Hwy" }, 1);
+  _hud.bCheatOn = 1;
+  SetHud();
+  OpenTrayAt();
+  Tap(BTN_TRAY_LEVEL);
+  CHECK(K->bLevelListOpen && !IOSTouchCore_CrosshairShows(NULL, NULL));
+  IOSTouchCore_CloseLevelList();
+  CHECK(IOSTouchCore_CrosshairShows(NULL, NULL));
+  _hud.bCheatOn = 0;
+  /* the game says no; other modes */
+  _hud.bCrosshair = 0;
+  SetHud();
+  CHECK(!IOSTouchCore_CrosshairShows(NULL, NULL));
+  _hud.bCrosshair = 1;
+  SetHud();
+  IOSTouchCore_SetMode(IOSTOUCH_MENU, _now);
+  CHECK(!IOSTouchCore_CrosshairShows(NULL, NULL));
+  IOSTouchCore_SetMode(IOSTOUCH_HIDDEN, _now);
+  CHECK(!IOSTouchCore_CrosshairShows(NULL, NULL));
+  IOSTouchCore_SetMode(IOSTOUCH_GAMEPLAY, _now);
+  CHECK(IOSTouchCore_CrosshairShows(NULL, NULL));
+  /* it never takes a touch: a touch on it is the aim stick's (or whatever is there) */
+  CHECK(IOSTouchCore_CrosshairShows(&x, &y) && IOSTouchCore_ButtonAt(x, y) < 0);
+  _hud.bCrosshair = 0;
+  SetHud();
+}
+
 /* ------------------------------------------------------------ EXECUTE, only while it can */
 static void TestExecute(void)
 {
@@ -1184,6 +1240,7 @@ int main(void)
   TestMenuBack();
   TestExecute();
   TestWheelCount();
+  TestCrosshair();
   TestSaveLoad();
   TestTray();
   TestWheel();

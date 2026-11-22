@@ -32,6 +32,8 @@ class CCamera;
 
 // Every frame of play (play.cpp CoreLoopRender, after Update): the realm, the player, the camera
 void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLive);
+// A level's realm is about to be cleared or deleted (play.cpp): forget its dude and camera
+void IOSGame_LevelGone(void);
 // Every frame shown, before IOSGame_Present (Bdisp): the frame as 0xAARRGGBB pixels, for photos
 void IOSGame_FrameShown(const uint32_t* pulARGB, int iWidth, int iHeight);
 // Bdisp's palette (0xAARRGGBB)

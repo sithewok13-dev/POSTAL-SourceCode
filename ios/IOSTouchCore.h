@@ -221,6 +221,10 @@ void IOSTouchCore_StatusRects(IOSTouchRect *prTop, IOSTouchRect *prRow2);
    IOSTOUCH_MENU only on BACK (the rest go on to SDL as mouse clicks); never when hidden */
 int  IOSTouchCore_TakesTouchAt(double x, double y);
 
+/* Whether the overlay's crosshair shows now (in play, the game says so with a place on the screen,
+   no wheel or level list over it); where (points) */
+int  IOSTouchCore_CrosshairShows(double *pfX, double *pfY);
+
 /* Buttons */
 int  IOSTouchCore_IsShown(int button);
 int  IOSTouchCore_ButtonAt(double x, double y);

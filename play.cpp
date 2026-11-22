@@ -723,6 +723,9 @@ class CPlayInfo
 		////////////////////////////////////////////////////////////////////////////////
 		~CPlayInfo()
 			{
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+			IOSGame_LevelGone();	// Added: iOS: before the realm and its dude go
+#endif
 			delete m_prealm;
 			delete m_pcamera;
 			delete m_pgrip;
@@ -3799,6 +3802,9 @@ class CPlayRealm : public CPlay
 			CRealm* prealm = pinfo->Realm();
 
 			// Clear realm (in case there's any crap left over from last realm)
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+			IOSGame_LevelGone();	// Added: iOS: before the realm's things go
+#endif
 			prealm->Clear();
 
 			// If we're supposed to purge the SAKs . . .
@@ -4169,6 +4175,9 @@ class CPlayRealm : public CPlay
 					}
 
 				// Shutdown realm
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+				IOSGame_LevelGone();	// Added: iOS: before the realm's things go
+#endif
 				prealm->Shutdown();
 				}
 			}

@@ -5491,6 +5491,10 @@ void CDude::ShowTarget()
 	}
 	else
 		m_TargetSprite.m_sInFlags |= CSprite::InHidden;
+#if PLATFORM_IOS || defined(POSTAL_RIG)
+	// Added: iOS: the touch overlay draws a bigger crosshair at this spot (IOS_AimPoint)
+	m_TargetSprite.m_sInFlags |= CSprite::InHidden;
+#endif
 }
 /*
 void CDude::ShowTarget(void)

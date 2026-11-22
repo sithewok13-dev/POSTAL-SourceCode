@@ -1510,6 +1510,17 @@ int IOSTouchCore_TakesTouchAt(double x, double y)
   return C.iMode == IOSTOUCH_MENU && IOSTouchCore_ButtonAt(x, y) == BTN_BACK;
 }
 
+int IOSTouchCore_CrosshairShows(double *pfX, double *pfY)
+{
+  Init();
+  const double fx = C.hud.fCrossX, fy = C.hud.fCrossY;
+  if (C.iMode != IOSTOUCH_GAMEPLAY || !C.hud.bCrosshair || C.bWheelOpen || C.bLevelListOpen) return 0;
+  if (!(fx >= 0.0 && fx <= 1.0 && fy >= 0.0 && fy <= 1.0)) return 0; /* (off the screen, or not a number) */
+  if (pfX) *pfX = fx * C.W;
+  if (pfY) *pfY = fy * C.H;
+  return 1;
+}
+
 int IOSTouchCore_HoldsGame(void)
 {
   Init();

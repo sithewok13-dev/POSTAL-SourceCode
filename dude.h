@@ -836,6 +836,17 @@ class CDude : public CCharacter
 		// Added: iOS: the touch controls' cheat sets this (ios/IOSGame.cpp)
 		void IOS_SetInvincible(bool bOn)	{ m_bInvincible = bOn; }
 		bool IOS_IsInvincible(void)	{ return m_bInvincible; }
+		// Added: iOS: where the game's targeting marker points (ShowTarget's spot: 100
+		// units ahead along his facing, at gun height), in scene coordinates, for the
+		// touch overlay's bigger crosshair (ShowTarget hides the small original on iOS).
+		void IOS_AimPoint(int16_t* psX, int16_t* psY)
+			{
+			int16_t sRotY = rspMod360((int16_t)m_dRot);
+			double dX = m_dX + COSQ[sRotY] * 100.0;
+			double dZ = m_dZ - SINQ[sRotY] * 100.0;
+			Map3Dto2D((int16_t)dX, (int16_t)(m_dY + m_sprite.m_sRadius * 2), (int16_t)dZ, psX, psY);
+			}
+
 		// Added: iOS: would EXECUTE do something now (the same tests the input does,
 		// without picking the victim): for the touch EXECUTE button to show only then
 		bool IOS_CanExecute(void)

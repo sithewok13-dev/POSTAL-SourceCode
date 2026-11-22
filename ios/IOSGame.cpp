@@ -402,6 +402,8 @@ bool IOSGame_CameraTarget(CRealm* prealm, double* pdX, double* pdY, double* pdZ)
 ////////////////////////////////////////////////////////////////////////////////
 enum { PHOTO_NONE = 0, PHOTO_ONE };
 static int		s_iPhoto		= PHOTO_NONE;	// a grab wanted on the next frame shown
+static bool		s_bCrossNow = false, s_bCanExecNow = false, s_bAliveNow = false;	// PlayFrame's findings, for Present
+static float		s_fCrossX = 0, s_fCrossY = 0;
 static CCamera*	s_pcamera		= NULL;		// the play camera, valid while s_prealm is
 
 // Saves pixels (0xAARRGGBB, top row first) as a photo of one kind
@@ -455,6 +457,16 @@ void IOSGame_FrameShown(const uint32_t* pul, int w, int h)
 	s_iPhoto = PHOTO_NONE;
 	}
 
+void IOSGame_LevelGone(void)
+	{
+	// Frames shown from now on (the load, the next level's intro) are out of play
+	s_prealm = NULL;
+	s_pdude = NULL;
+	s_pcamera = NULL;
+	s_pdudeInvincibleSet = NULL;
+	s_bCrossNow = s_bCanExecNow = s_bAliveNow = false;
+	}
+
 void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLive)
 	{
 	// Demos (the attract mode, the ending) play recorded input: leave them alone
@@ -484,6 +496,28 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 	if (pdude && s_bCheat)
 		ApplyCheat(pdude);
 	SendIcons(prealm);
+	// The crosshair (the game's aim point, from the scene to the screen: the film is the
+	// whole screen in full-screen play) and EXECUTE (not with the follow cam on, which
+	// holds the dude's buttons), for Present
+	s_bCrossNow = s_bCanExecNow = false;
+	s_bAliveNow = pdude && !pdude->IsDead();
+	if (s_bAliveNow && !s_bFollow)
+		{
+		s_bCanExecNow = pdude->IOS_CanExecute();
+		if (pcamera && pcamera->m_pimFilm && pcamera->m_pimFilm->m_sWidth > 0 && pcamera->m_pimFilm->m_sHeight > 0)
+			{
+			int16_t sX, sY;
+			pdude->IOS_AimPoint(&sX, &sY);
+			const float fX = (float)(sX - pcamera->m_sScene2FilmX) / (float)pcamera->m_pimFilm->m_sWidth;
+			const float fY = (float)(sY - pcamera->m_sScene2FilmY) / (float)pcamera->m_pimFilm->m_sHeight;
+			if (fX >= 0.0f && fX <= 1.0f && fY >= 0.0f && fY <= 1.0f)
+				{
+				s_bCrossNow = true;
+				s_fCrossX = fX;
+				s_fCrossY = fY;
+				}
+			}
+		}
 	SendWeapons(pdude);
 #ifdef POSTAL_RIG
 	// Test rig only: the dude's state, for scripted checks
@@ -584,14 +618,22 @@ void IOSGame_Present(void* pSDLWindow)
 	hud.bFollowing = s_bFollow;
 	hud.iSlowMo = s_iSlow;
 	hud.uLevel = s_uLevel;
-	// EXECUTE's button: while a press would execute someone (not with the follow cam on,
-	// which holds the dude's buttons); kept up 0.25 s after, so a victim at the edge of
-	// reach doesn't make it flicker
+	// The crosshair and EXECUTE, as PlayFrame found them (only it may touch the dude:
+	// a frame shown just after a level is torn down still has the old one)
+	if (bPlaying && s_bCrossNow)
+		{
+		hud.bCrosshair = 1;
+		hud.fCrossX = s_fCrossX;
+		hud.fCrossY = s_fCrossY;
+		hud.bFiring = (s_in.ulButtons & IOSTOUCH_FIRE) ? 1 : 0;
+		}
+	// EXECUTE's button: while a press would execute someone; kept up 0.25 s after,
+	// so a victim at the edge of reach doesn't make it flicker
 	static uint32_t s_ulExecUntil = 0;
 	const uint32_t ulNow = SDL_GetTicks();
-	if (bPlaying && !s_bFollow && s_pdude && s_pdude->IOS_CanExecute())
+	if (bPlaying && s_bCanExecNow)
 		s_ulExecUntil = ulNow + 250;
-	else if (!bPlaying || s_bFollow || !s_pdude || s_pdude->IsDead())
+	else if (!bPlaying || !s_bAliveNow)
 		s_ulExecUntil = 0;
 	hud.bCanExecute = (int32_t)(s_ulExecUntil - ulNow) > 0 ? 1 : 0;
 

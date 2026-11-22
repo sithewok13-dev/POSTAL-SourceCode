@@ -184,6 +184,11 @@ typedef struct {
   int bCheatIconOn;
   UIView *stickBase, *stickKnob;
   UIView *aimBase, *aimKnob;   /* the aim stick (as the move stick) */
+  /* the crosshair (where his shots go): a layer under every view (so under the buttons and sticks, over the
+     game), its dark outline and its white (red while firing) marks; made once, only moved */
+  CALayer *crossLayer;
+  CAShapeLayer *crossOutline, *crossMarks;
+  int iCrossLook; /* what its colour was set for: -1 none yet, 0 white, 1 red */
   CAShapeLayer *aimFireRing;   /* ...its faint ring where it starts to fire */
   UIView *aTrayBack[2];
   UILabel *versionLabel, *fpsLabel, *messageLabel;
@@ -406,6 +411,7 @@ static UILabel *MakeLabel(CGFloat size, CGFloat alpha)
   }
   healthLabel.textAlignment = NSTextAlignmentLeft;
 
+  [self makeCrosshair];
   [self makeWheel];
   [self makeLevelPanel];
   iLooksKey = -1;
@@ -625,6 +631,7 @@ static void SetFrameOf(UIView *v, const IOSTouchRect *r)
 
 
   [self refreshInfo];
+  [self refreshCrosshair];
   [self syncWheel];
   [self syncLevels];
   [CATransaction commit];
@@ -773,6 +780,70 @@ static void PlaceLine(UILabel *l, NSAttributedString *text, CGFloat x0, CGFloat 
     CGContextRestoreGState(c);
   }
   CGContextRestoreGState(c);
+}
+
+/* ---------------------------------------------------------------- the crosshair */
+/* A ring 30 pt across, four short ticks outside it (up, down, left, right) and a dot in the middle: white
+   marks 2 pt wide over the same in black 5 pt wide (an outline that reads on snow and on dark ground);
+   red while FIRE is held. Its layer sits under every view and takes no touches. */
+#define CROSS_R      15.0
+#define CROSS_TICK0  18.0
+#define CROSS_TICK1  25.0
+#define CROSS_DOT    1.6
+#define CROSS_SIZE   56.0
+- (void)makeCrosshair
+{
+  const CGPoint c = CGPointMake(CROSS_SIZE * 0.5, CROSS_SIZE * 0.5);
+  UIBezierPath *p = [UIBezierPath bezierPathWithArcCenter:c radius:CROSS_R startAngle:0 endAngle:2 * M_PI clockwise:YES];
+  for (int i = 0; i < 4; i++) {
+    const CGFloat dx = (i == 0) - (i == 1), dy = (i == 2) - (i == 3);
+    [p moveToPoint:CGPointMake(c.x + dx * CROSS_TICK0, c.y + dy * CROSS_TICK0)];
+    [p addLineToPoint:CGPointMake(c.x + dx * CROSS_TICK1, c.y + dy * CROSS_TICK1)];
+  }
+  [p moveToPoint:CGPointMake(c.x + CROSS_DOT, c.y)];
+  [p addArcWithCenter:c radius:CROSS_DOT startAngle:0 endAngle:2 * M_PI clockwise:YES]; /* (the dot: a tiny ring, stroked) */
+  NSDictionary *none = @{ @"position" : [NSNull null], @"hidden" : [NSNull null], @"bounds" : [NSNull null],
+                          @"strokeColor" : [NSNull null], @"fillColor" : [NSNull null] };
+  crossLayer = [CALayer layer];
+  crossLayer.bounds = CGRectMake(0, 0, CROSS_SIZE, CROSS_SIZE);
+  crossLayer.opacity = 0.9;
+  crossLayer.hidden = YES;
+  crossLayer.actions = none;
+  crossOutline = [CAShapeLayer layer];
+  crossOutline.frame = crossLayer.bounds;
+  crossOutline.path = p.CGPath;
+  crossOutline.fillColor = [UIColor clearColor].CGColor;
+  crossOutline.strokeColor = Grey(0.0, 0.8).CGColor;
+  crossOutline.lineWidth = 5.0;
+  crossOutline.lineCap = kCALineCapRound;
+  crossOutline.actions = none;
+  crossMarks = [CAShapeLayer layer];
+  crossMarks.frame = crossLayer.bounds;
+  crossMarks.path = p.CGPath;
+  crossMarks.fillColor = [UIColor clearColor].CGColor;
+  crossMarks.strokeColor = Grey(1.0, 1.0).CGColor;
+  crossMarks.lineWidth = 2.0;
+  crossMarks.lineCap = kCALineCapRound;
+  crossMarks.actions = none;
+  [crossLayer addSublayer:crossOutline];
+  [crossLayer addSublayer:crossMarks];
+  [self.layer insertSublayer:crossLayer atIndex:0]; /* (under every view's layer) */
+  iCrossLook = -1;
+}
+
+/* Every frame: where the game says, at once (no animation), red while firing */
+- (void)refreshCrosshair
+{
+  double x, y;
+  const int bShow = IOSTouchCore_CrosshairShows(&x, &y);
+  if (crossLayer.hidden == bShow) crossLayer.hidden = !bShow;
+  if (!bShow) return;
+  crossLayer.position = CGPointMake(x, y);
+  const int iLook = IOSTouchCore_Get()->hud.bFiring ? 1 : 0;
+  if (iLook != iCrossLook) {
+    iCrossLook = iLook;
+    crossMarks.strokeColor = iLook ? [UIColor colorWithRed:1.0 green:0.18 blue:0.12 alpha:1.0].CGColor : Grey(1.0, 1.0).CGColor;
+  }
 }
 
 /* EXECUTE comes and goes with what the game says (IOSTouchCore_IsShown): a quick fade, not a pop */
