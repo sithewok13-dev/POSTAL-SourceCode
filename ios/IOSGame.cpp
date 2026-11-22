@@ -403,7 +403,7 @@ bool IOSGame_CameraTarget(CRealm* prealm, double* pdX, double* pdY, double* pdZ)
 enum { PHOTO_NONE = 0, PHOTO_ONE };
 static int		s_iPhoto		= PHOTO_NONE;	// a grab wanted on the next frame shown
 static bool		s_bCrossNow = false, s_bCanExecNow = false, s_bAliveNow = false;	// PlayFrame's findings, for Present
-static float		s_fCrossX = 0, s_fCrossY = 0;
+static int16_t		s_sCrossSceneX = 0, s_sCrossSceneY = 0;	// the aim point in the scene
 static CCamera*	s_pcamera		= NULL;		// the play camera, valid while s_prealm is
 
 // Saves pixels (0xAARRGGBB, top row first) as a photo of one kind
@@ -504,19 +504,10 @@ void IOSGame_PlayFrame(CRealm* prealm, CDude* pdude, CCamera* pcamera, bool bLiv
 	if (s_bAliveNow && !s_bFollow)
 		{
 		s_bCanExecNow = pdude->IOS_CanExecute();
-		if (pcamera && pcamera->m_pimFilm && pcamera->m_pimFilm->m_sWidth > 0 && pcamera->m_pimFilm->m_sHeight > 0)
-			{
-			int16_t sX, sY;
-			pdude->IOS_AimPoint(&sX, &sY);
-			const float fX = (float)(sX - pcamera->m_sScene2FilmX) / (float)pcamera->m_pimFilm->m_sWidth;
-			const float fY = (float)(sY - pcamera->m_sScene2FilmY) / (float)pcamera->m_pimFilm->m_sHeight;
-			if (fX >= 0.0f && fX <= 1.0f && fY >= 0.0f && fY <= 1.0f)
-				{
-				s_bCrossNow = true;
-				s_fCrossX = fX;
-				s_fCrossY = fY;
-				}
-			}
+		// (in the scene: Present turns it into a screen spot with the camera as it
+		// was for the frame drawn -- it scrolls after this, before the frame is drawn)
+		pdude->IOS_AimPoint(&s_sCrossSceneX, &s_sCrossSceneY);
+		s_bCrossNow = true;
 		}
 	SendWeapons(pdude);
 #ifdef POSTAL_RIG
@@ -620,11 +611,19 @@ void IOSGame_Present(void* pSDLWindow)
 	hud.uLevel = s_uLevel;
 	// The crosshair and EXECUTE, as PlayFrame found them (only it may touch the dude:
 	// a frame shown just after a level is torn down still has the old one)
-	if (bPlaying && s_bCrossNow)
+	if (bPlaying && s_bCrossNow && s_pcamera && s_pcamera->m_pimFilm
+		&& s_pcamera->m_pimFilm->m_sWidth > 0 && s_pcamera->m_pimFilm->m_sHeight > 0)
 		{
-		hud.bCrosshair = 1;
-		hud.fCrossX = s_fCrossX;
-		hud.fCrossY = s_fCrossY;
+		// (the camera is the play info's and lives until IOSGame_LevelGone; the film is
+		// the whole screen in full-screen play)
+		const float fX = (float)(s_sCrossSceneX - s_pcamera->m_sScene2FilmX) / (float)s_pcamera->m_pimFilm->m_sWidth;
+		const float fY = (float)(s_sCrossSceneY - s_pcamera->m_sScene2FilmY) / (float)s_pcamera->m_pimFilm->m_sHeight;
+		if (fX >= 0.0f && fX <= 1.0f && fY >= 0.0f && fY <= 1.0f)
+			{
+			hud.bCrosshair = 1;
+			hud.fCrossX = fX;
+			hud.fCrossY = fY;
+			}
 		hud.bFiring = (s_in.ulButtons & IOSTOUCH_FIRE) ? 1 : 0;
 		}
 	// EXECUTE's button: while a press would execute someone; kept up 0.25 s after,
