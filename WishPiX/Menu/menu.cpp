@@ -509,6 +509,10 @@ inline bool NextItem(	// Returns true, if new item selected.
 #if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)  // Added: iOS: taps choose menu items (the Android port's code)
 bool MouseChooseItem(int x, int y)
 {
+	// Added: iOS: of the items on the tapped row, the one whose column the tap is in
+	// (the Android code took the first on the row, so in two-column menus such as
+	// Keyboard Setup the right-hand column could never be tapped)
+	int best = -1;
 	for (int i=0;i < ms_sNumMenuItems; i++)
 	{
 		int top = ms_asMenuItemPosY[i] - ms_asMenuItemMouseHeight[i] / 2;
@@ -516,16 +520,20 @@ bool MouseChooseItem(int x, int y)
 		TRACE("MouseChooseItem %d  top=%d  bot=%d",i,top,bottom);
 		if ((y >= top) && (y < bottom)) //Check if Y is in a controls area
 		{
-			if (ms_pmenu->ami[i].sEnabled) //Check item is actually enabled
-			{
-				ms_sCurItem = i;
-				(*(ms_pmenu->menucallbacks.fnChoice))(ms_pmenu, -1);
-				// Set focus to this item's gui or to no item, if none.
-				ms_msgbox.SetFocus(ms_pmenu->ami[ms_sCurItem].pgui);
-
-				return true;
-			}
+			const int left = ms_asMenuItemPosX[i] - 24;	// (and the indicator just left of it)
+			if (best < 0
+				|| (left <= x && (ms_asMenuItemPosX[best] - 24 > x || ms_asMenuItemPosX[i] > ms_asMenuItemPosX[best])))
+				best = i;
 		}
+	}
+	if (best >= 0 && ms_pmenu->ami[best].sEnabled) //Check item is actually enabled
+	{
+		ms_sCurItem = best;
+		(*(ms_pmenu->menucallbacks.fnChoice))(ms_pmenu, -1);
+		// Set focus to this item's gui or to no item, if none.
+		ms_msgbox.SetFocus(ms_pmenu->ami[ms_sCurItem].pgui);
+
+		return true;
 	}
 	return false;
 }

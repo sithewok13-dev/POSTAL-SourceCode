@@ -150,6 +150,9 @@ static bool			ms_bMenuDone			= false;	// true, when the current menu
 
 static int16_t		ms_sResetItem;						// Index of item that restores
 																// the default inputs.
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+static bool			ms_bListenStartPress	= false;	// Added: iOS: this input event started the wait for a key
+#endif
 static int16_t		ms_sResetItemOld;					// Index of item that restores the old default inputs.
 
 static int16_t		ms_sMouseButtons;
@@ -289,6 +292,11 @@ extern int16_t InputSettingsDlg_InitMenu(	// Returns 0 on success.
 	// Next item please.
 	sInputIndex++;
 
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+	// Added: iOS: no "restore old (1997) defaults" on a phone: the screen is full, and
+	// its slot is where the BACK item goes (WishPiX/Menu/menu.cpp StartMenu)
+	ms_sResetItemOld = -1;
+#else
 	// Remember the reset item index.
 	ms_sResetItemOld = sInputIndex;
 
@@ -299,6 +307,7 @@ extern int16_t InputSettingsDlg_InitMenu(	// Returns 0 on success.
 
 	// Next item please.
 	sInputIndex++;
+#endif
 
 	// Make the back the cancel item.
 	pmenu->menuautoitems.sCancelItem	= sInputIndex;
@@ -508,7 +517,9 @@ inline void ListenForInput(	// Returns nothing.
 		// does (the tap that started it was used by the menu; a tap is no key, mouse
 		// button or controller button to bind)
 		case RInputEvent::Mouse:
-			if (pie->sUsed == FALSE && pie->sEvent == RSP_MB0_PRESSED)
+			if (ms_bListenStartPress)
+				ms_bListenStartPress = false;	// the press that started this wait
+			else if (pie->sUsed == FALSE && pie->sEvent == RSP_MB0_PRESSED)
 				{
 				ms_bListenForInput	= false;
 				bAffirmitiveFeedback	= false;
@@ -775,6 +786,9 @@ extern int16_t EditInputSettings(void)	// Returns nothing.
 							InputSettingsDlg_Choice(
 								GetCurrentMenu(),
 								RGuiItem::ms_pguiFocus->m_ulUserData);
+#if defined(MOBILE) || PLATFORM_IOS || defined(POSTAL_RIG)
+							ms_bListenStartPress = ms_bListenForInput;	// Added: iOS: (this press doesn't also end the wait it started)
+#endif
 							}
 						break;
 					}
