@@ -565,7 +565,7 @@ int16_t RProtocolBSDIP::Open(							// Returns 0 if successful, non-zero otherwi
 						addr.sin_addr.s_addr = INADDR_ANY;
 
 						// Bind socket to local address
-						if (bind(m_sock, (SOCKADDR*) &addr, sizeof(addr)) != SOCKET_ERROR)
+						if (::bind(m_sock, (SOCKADDR*) &addr, sizeof(addr)) != SOCKET_ERROR)
 							{
 							// success
 							}
@@ -766,7 +766,7 @@ int16_t RProtocolBSDIP::Listen(							// Returns 0 if successfull, non-zero othe
 				// value to the max value (5).  Note, however, that it could be less
 				// than 5, just not greater than 5.
 				BSDIP_FUNCNUM(RSocket::OtherFunc);
-				if (listen(m_sock, (int)sMaxQueued) != SOCKET_ERROR)
+				if (::listen(m_sock, (int)sMaxQueued) != SOCKET_ERROR)
 					{
 					// Socket is listening
 					m_bListening = true;
@@ -831,7 +831,7 @@ int16_t RProtocolBSDIP::Accept(						// Returns 0 on success, non-zero otherwise
 				#if PLATFORM_UNIX
 				memset(&addressClient.address, 0, sizeof(addressClient.address));
 				SOCKLEN addrlen = (SOCKLEN)sizeof(addressClient.address);
-				((RProtocolBSDIP*)pProtocolClient)->m_sock = accept(m_sock, (SOCKADDR*)&(addressClient.address), &addrlen);
+				((RProtocolBSDIP*)pProtocolClient)->m_sock = ::accept(m_sock, (SOCKADDR*)&(addressClient.address), &addrlen);
 				addressClient.lAddressLen = (int32_t)addrlen;
 				#else
 				((RProtocolBSDIP*)pProtocolClient)->m_sock = accept(m_sock, (SOCKADDR*)&(addressClient.address), (int*)(&addressClient.lAddressLen));
@@ -951,7 +951,7 @@ int16_t RProtocolBSDIP::Connect(						// Returns 0 if successfull, non-zero othe
 
 				// Try to connect to remote socket
 				BSDIP_FUNCNUM(RSocket::OtherFunc);
-				if (connect(m_sock, (SOCKADDR*)&(paddress->address), sizeof(SOCKADDR_IN)) != SOCKET_ERROR)
+				if (::connect(m_sock, (SOCKADDR*)&(paddress->address), sizeof(SOCKADDR_IN)) != SOCKET_ERROR)
 					{
 					// Connected!
 					m_bConnecting = false;
@@ -1115,7 +1115,7 @@ int16_t RProtocolBSDIP::Send(							// Returns 0 on success, non-zero otherwise
 				
 				// Send data
 				BSDIP_FUNCNUM(RSocket::OtherFunc);
-				*plActualBytes = (int32_t)send(m_sock, (char*)pBuf, lNumBytes, BSDIP_SEND_FLAGS);
+				*plActualBytes = (int32_t)::send(m_sock, (char*)pBuf, lNumBytes, BSDIP_SEND_FLAGS);
 				if (*plActualBytes == SOCKET_ERROR)
 					{
 					*plActualBytes = 0;
